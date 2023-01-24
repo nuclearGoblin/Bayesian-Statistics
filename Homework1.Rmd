@@ -1,0 +1,53 @@
+---
+title: "Homework 1 - Probability"
+author: "Kitty Harris"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+## Problem 1: 
+**Suppose that if $\theta = 1$, $y = N(5,2^2)$. If $\theta = 2$, then $y = \chi^2_3$. Assume $P(\theta = 1) = 0.3$ and $P(\theta = 2) = 0.7$.**
+
+### a. 
+**Determine the joint distribution of $y$ and $\theta$.**
+
+The joint distribution $p(y,\theta) = p(y|\theta)p(theta)$. We are already given $p(y|\theta = 1)$, $p(y|\theta = 2)$, $p(theta = 1)$, and $p(\theta) = 2$, and we know that $\theta$ can only take values 1 or 2. Therefore,
+
+$$
+p(y,\theta) = 
+\begin{cases}
+  \frac{3}{10}\frac{1}{\sqrt{8\pi}}\exp{-(y-5)^2/4} &,& \theta = 1 \\
+  \frac{7}{10}\frac{2^{-3/2}}{\Gamma(3/2)}e^{-y/2}y^{1/2} &,& \theta = 2
+\end{cases}
+$$
+
+### b. 
+**Determine the marginal density of $y$.**
+
+The marginal density is the sum of the joint densities over each allowed value of $\theta$:
+
+$$
+p(y) = \frac{3}{10}\frac{1}{\sqrt{8\pi}}\exp{-(y-5)^2/4} + \frac{7}{10}\frac{2^{-3/2}}{\Gamma(3/2)}e^{-y/2}y^{1/2}
+$$
+
+### c. 
+**Draw the density of $y$.**
+
+```{r}
+p_y <- function(y){
+  return(3/10*1/sqrt(8*pi)*exp(-(y-5)^2)/4 + 7/10*(2^(-3/2)/gamma(3/2))*exp(-y/2)*sqrt(y))
+}
+y <- seq(0, 10, length.out=100)
+plot(y,p_y(y))
+```
+
+### d.
+**Determine $P(\theta = 1 | y = 0.5)**
+
+Using $p(\theta|y) = \frac{p(\theta,y)}{p(y)}$:
+
+$$p(\theta = 1 | y = 0.5) = \frac{p(\theta = 1, y = 0.5)}{p(y = 0.5)} = 
+
+
+
