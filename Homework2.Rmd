@@ -1,0 +1,39 @@
+---
+title: "Homework 2 - Single parameter models"
+author: "Kitty Harris"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+### Problem 1:
+**You would like to know the probability a coin will yield a ‘head’ when spun in a certain manner. Let $\theta$ denote the probability of a head for a single spin. Somebody spins the coin 10 times and observes fewer than 3 heads (you only know that there were fewer than 3 successes in 10 spins). A Beta(4, 4) distribution matches your prior beliefs about $\theta$.
+Compute the unnormalized posterior density for $\theta$, $p(\theta|y<3)$ and plot the result.**
+
+The distribution $p(y|\theta) ~ \mathrm{Binomial}(\theta,n=10)$ and the probability $p(y<3|\theta) = \sum_{i=0}^2 p(y=i|\theta)$, so 
+
+$$
+\begin{aligned}
+p(\theta|y<3) & \propto p(y<3|\theta)p(\theta) \\
+& = \left( {10\choose0}\theta^0(1-\theta)^{10-0} + {10\choose1}\theta^1(1-\theta)^{10-1} + {10\choose2}\theta^2(1-\theta)^{10-2}\right)\frac{\theta^{4-1}(1-\theta)^{4-1}}{B(4,4)} \\
+& = \frac{\theta^3(1-\theta)^{13}+10\theta^4(1-\theta)^{12}+45\theta^5(1-\theta)^{11}}{1/140}
+\end{aligned}
+$$
+
+```{r, out.width="90%"}
+p_t = function(x){140*x^3*(1-x)^13 + 1400*x^4*(1-x)^12+6300*x^5*(1-x)^11}
+x = seq(0, 1, length.out=100); plot(x,p_t(x))
+```
+
+### Problem 2:
+**Consider two coins $C_1$ and $C_2$. $P(heads|C_1) = 0.6$ and $P(heads|C_2) = 0.4$. Choose one of the coins at random and imagine spinning it repeatedly until you get a head. Given that the first two spins from the chosen coin are fails, what is the expectation of the number of additional spins until a head shows up? Let $S$ be the number of additional spins until you spin a ‘head’. Let $TT$ denote the first two spins were tails. Determine $E[S|TT]$.
+Hint: Use the double expectation rule and Bayes’ theorem to solve this problem.**
+
+Given $\theta$, $y$ is geometric. We take our prior to be that we are equally likely to have $C_1$ or $C_2$, making $p_y = \frac{1}{2}\sum_{i=1}^2 p(y|\theta=C_i)$. Using the double expectation rule, 
+$$
+E(S|TT) = E(E(S|\theta)|TT) = E(\frac{1}{\theta} - 1|TT) = \sum_{i=1}^2\frac{1}{C_i}p(C_i|TT)-1,
+$$
+where
+$$
+p(C_i|TT) = 
+$$
