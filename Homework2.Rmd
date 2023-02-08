@@ -15,7 +15,7 @@ The distribution $p(y|\theta) ~ \mathrm{Binomial}(\theta,n=10)$ and the probabil
 $$
 \begin{aligned}
 p(\theta|y<3) & \propto p(y<3|\theta)p(\theta) \\
-& = \left( {10\choose0}\theta^0(1-\theta)^{10-0} + {10\choose1}\theta^1(1-\theta)^{10-1} + {10\choose2}\theta^2(1-\theta)^{10-2}\right)\frac{\theta^{4-1}(1-\theta)^{4-1}}{B(4,4)} \\
+& = \left( \binom{10}{0}\theta^0(1-\theta)^{10-0} + \binom{10}{1}\theta^1(1-\theta)^{10-1} + \binom{10}{2}\theta^2(1-\theta)^{10-2}\right)\frac{\theta^{4-1}(1-\theta)^{4-1}}{B(4,4)} \\
 & = \frac{\theta^3(1-\theta)^{13}+10\theta^4(1-\theta)^{12}+45\theta^5(1-\theta)^{11}}{1/140}
 \end{aligned}
 $$
@@ -35,5 +35,127 @@ E(S|TT) = E(E(S|\theta)|TT) = E(\frac{1}{\theta} - 1|TT) = \sum_{i=1}^2\frac{1}{
 $$
 where
 $$
-p(C_i|TT) = 
+p(C_i|TT) = \frac{p(TT|C_i)p(C_i)}{p(TT)} = \frac{(1-C_i)^2}{2(\frac{1}{2}0.4^2+\frac{1}{2}0.6^2)} = \frac{(1-C_i)^2}{0.52},
 $$
+so $E(S|TT) = \frac{1}{0.6}\frac{0.4^2}{0.52} + \frac{1}{0.4}\frac{0.6^2}{0.52} - 1 = 1.24$.
+
+### Problem 3:
+#### a. Determine Jeffreys’ prior for $\lambda$ assuming a Poisson($\lambda$) sampling distribution.
+
+The likelihood is $p(y|\lambda) = \frac{e^{-\lambda}\lambda^y}{y!}$, so
+$$
+\begin{aligned}
+& ln(p(y|\lambda)) & = & -\lambda + y*ln\lambda - c \\
+\therefore & \frac{d}{d\lambda}ln(p(y|\lambda)) & = & -1 + \frac{y}{\lambda} \\
+\therefore & \frac{d^2}{d\lambda^2}ln(p(y|\lambda)) & = & -\frac{y}{\lambda^2} \\
+\therefore & -E(\frac{-y}{\lambda^2}|\lambda) & = & \frac{1}{\lambda^2}E(y|\lambda) = \frac{1}{\lambda} \\
+\therefore & J(\lambda) & \propto & \lambda^{-1/2}
+\end{aligned}
+$$
+
+#### b. Is the resulting distribution in (a) similar to any known distribution? If so, with what parameters?
+This looks like a Beta$(\frac{1}{2},1)$ distribution if it could be extended to the range $[0,\infty]$.
+
+### Problem 4:
+#### a. Determine the natural parameter of the binomial distribution.
+
+The likelihood of the binomial distribution is
+$$
+p(y|\theta) = \binom{n}{y} \theta^y(1-\theta)^{n-y} = \binom{n}{y}\left(\frac{\theta}{1-\theta}\right)^y(1-\theta)^n=\binom{n}{y}(1-\theta)^nexp\left[y*ln\frac{\theta}{1-\theta}\right],
+$$
+making the natural parameter $\eta = \frac{\theta}{1-\theta}$.
+
+#### b.  Denote the natural parameter found in (a) as $\phi(\theta)$. Assume $p(\phi(\theta)) \propto 1$. Note that this is an improper prior distribution because it CANNOT integrate to 1 since the support of the natural parameter is $(-\infty,\infty)$. Determine $p(\theta)$ using the change-ofvariable formula.
+
+$$
+\frac{d\phi}{d\theta} = \frac{d}{d\theta}\left(\frac{\theta}{1-\theta}\right)\frac{1-\theta}{\theta} = \frac{1}{(1-\theta)^2}\frac{1-\theta}{\theta} = \frac{1}{\theta(1-\theta)} \\
+\therefore J(\theta) = \sqrt{1*|\frac{1}{\theta(1-\theta)}}=(\theta(1-\theta))^{-1/2}
+$$
+
+#### c. Use the prior derived in (b) to derive the posterior distribution for a Binomial$(n,\theta)$ sampling distribution. Is the resulting posterior distribution always proper?
+
+The posterior is $p(\theta|y) = \frac{p(y|\theta)p(\theta)}{p(y)}$, where
+$$
+p(y) = \int_0^1\binom{n}{y}\theta^{y-1/2}(1-\theta)^{n-y-1/2}d\theta = \frac{n!}{y!(n-y)!}\frac{\Gamma(y+1/2)\Gamma(n-y+1/2)}{(n+1)n!},
+$$
+so
+$$
+p(\theta|y) = \frac{\binom{n}{y}(n+1)\theta^{y-1/2}(1-\theta)^{n-y-1/2}}{\Gamma(y+1/2)\Gamma(n-y+1/2)}.
+$$
+To check if it is proper, integrate over all allowed values of $\theta$:
+$$
+\begin{aligned}
+\int_0^1p(\theta|y)d\theta & = \binom{n}{y}\frac{n+1}{\Gamma(y+1/2)\Gamma(n-y+1/2)}\int_0^1\theta^{y-1/2}(1-\theta)^{n-y-1/2}d\theta \\
+& = \frac{(n+1)!\Gamma(y+1/2)\Gamma(n-y+1/2)}{y!(n-y)!(n+1)!\Gamma(y+1/2)\Gamma(n-y+1/2)} \\
+& = \frac{1}{y!(n-y)!},
+\end{aligned}
+$$
+which is only 1 when $n=1$, so the posterior is not always proper.
+
+### Problem 5:
+**Assume $y|\theta$ ~ Bin$(n,\theta)$ and $\theta$ ~ U$(0,1)$.**
+
+#### a. Determine the prior predictive distribution for $y$. Does this make sense, intuitively?
+
+$$p(y) = \int_0^1\binom{n}{y}\theta^y(1-\theta)^{n-y}dy = \frac{1}{n+1}$$
+This makes sense because, with uniform $\theta$ for $n$ events, $y$ should have an equal chance to be any element of ${0,1,...,n}$.
+
+#### b. Is the posterior variance for $\theta$ ever greater than the prior variance? If so, provide an example.
+
+The prior variance is $\frac{1}{12}$. The posterior distribution is
+$$
+p(\theta|y) = \frac{p(y|\theta)p(\theta)}{p(y)} = \binom{n}{y}\frac{\theta^y(1-\theta)^{n-y}}{1/(n+1)} = (n+1)\binom{n}{y}\theta^y(1-\theta)^{n-y},
+$$
+its mean is
+$$
+E(\theta|y) = (n+1)\binom{n}{y}\int_0^1\theta^{y+1}(1-\theta)^{n-y}d\theta = \frac{(n+1)!(y+1)!(n-y)!}{y!(n-y)!(n+2)!} = \frac{y+1}{n+2}
+$$
+and its second moment is
+$$
+E(\theta^2|y) = (n+1)\binom{n}{y}\int_0^1\theta^{y+2}(1-\theta)^{n-y}d\theta = \frac{(n+1)!(y+2)!(n-y)!}{y!(n-y)!(n+3)!} = \frac{(y+2)(y+1)}{(n+3)(n+2)},
+$$
+making the posterior variance
+$$
+Var(\theta|y) = \frac{y+1}{n+2}\left(\frac{y+2}{n+3}-\frac{y+1}{n+2}\right)
+$$
+which is never greater than $\frac{1}{12}$ for any integers $y,n$ such that $n\geq 1,y\leq n$.
+
+### Problem 6:
+**Assume $y|\theta$ ~ Bin$(n,\theta)$ and $\theta$ ~ Beta$(\alpha,\beta)$. Is the posterior variance for $\theta$ ever greater than the prior variance? If so, provide an example.**
+
+This is a conjugate pair; $\theta|y$ ~ Beta$(y+\alpha,n-y+\beta)$. Therefore, the prior variance is $\frac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)}$ and the posterior variance is $\frac{(y+\alpha)(n-y+\beta)}{(n+\beta)^2(n+\beta+1)}$. If $\alpha=\beta=n=1$ and $y=0$, then the prior variance is $\frac{1}{2}$ and the posterior variance is ${1}{6}$, making the posterior variance greater.
+
+### Problem 7:
+**In general, when might the posterior variance be greater than the prior variance? (Not for this specific example, but in general?)**
+
+The posterior variance may be larger than the prior when the sample size is small or the data taken is not similar to the prior distribution. In layman's terms, this is when the data causes us to question our assumptions or does not strongly back our assumptions.
+
+### Problem 8:
+**Use Bayes’ theorem to verify the formulas for $\mu_n$ and $\tau_n^2$ given in the notes when $y_1...,y_n|\theta$~N$(\theta,\sigma^2)$ and $\theta$~N$(\mu_0,\tau_0^2)$, with $\sigma^2$ assumed known. Hint: complete the square!**
+
+We can show this by finding the posterior distribution $p(\theta|y) = \frac{p(y|\theta)p(\theta)}{p(y)}$ to be N$(\mu_n,\tau_n^2)$ where $\mu_n = \frac{\frac{\mu_0}{\tau_0^2}+\frac{n}{\sigma^2}y}{\frac{1}{\tau_0^2}+\frac{n}{\sigma^2}}$ and $\frac{1}{\tau_n^2} = \frac{n}{\sigma^2} + \frac{1}{\tau_0^2}$. Our prior predictive distribution will be
+$$
+p(y) = \int_{-\infty}^\infty\frac{1}{2\pi(\sigma/\sqrt n)\tau_0}exp\left[\frac{-1}{2}\left(\left(\frac{y-\theta}{\sigma/\sqrt n}\right)^2+\left(\frac{\theta-\mu_0}{\tau_0}\right)^2\right)\right]d\theta.
+$$
+Expanding the terms inside the exponential gives:
+$$
+\frac{ny^2}{\sigma^2}-\frac{2ny\theta}{\sigma^2} + \frac{n\theta^2}{\sigma^2} + \frac{\theta^2}{\tau_0^2} - \frac{2\theta\mu_0}{\tau_0^2} + \frac{\mu_0^2}{\tau_0^2} $$$$
+= \left(\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}\right)\theta^2-2\left(\frac{y}{\sigma^2}+\frac{\mu_0}{\tau_0^2}\right)\sqrt{\frac{\frac{n}{\sigma^2}+\frac{1}{\tau_0}^2}{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}}\theta+\frac{(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2})^2}{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}} - \frac{(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2})^2}{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}} + \frac{ny^2}{\sigma^2} + \frac{mu_0^2}{\tau_0^2},
+$$
+making
+$$
+\begin{aligned}
+p(y) &= \frac{1}{2\pi(\sigma/\sqrt  n)\tau_0}exp\left[\frac{-1}{2}\left(\frac{ny^2}{\sigma^2}+\frac{\mu_0^2}{\tau_0^2}\right)\right]exp\left[\frac{-1}{2}\frac{(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2})^2}{\frac{n}{\sigma^2}+\frac{1}{\tau_0}^2}\right]\int_{-\infty}^\infty exp\left[\frac{-1}{2}\left(\sqrt{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}\theta - \frac{\frac{ny}{\sigma^2} + \frac{\mu_0}{\tau_0^2}}{\sqrt{\frac{n}{\sigma^2} + \frac{1}{\tau_0^2}}}\right)^2\right]d\theta \\
+&= \frac{1}{\sqrt{2\pi}(\sigma/\sqrt n)\tau_0\sqrt{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}}exp\left[\frac{ny^2}{\sigma^2}+\frac{\mu_0^2}{\tau_0^2}\right]exp\left[\frac{(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2})^2}{\sqrt{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}}\right]
+\end{aligned}
+$$
+so that
+$$
+\begin{aligned}
+p(\theta|y) &= \frac{1}{\sqrt{2\pi}}\sqrt{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}exp\left[\frac{-1}{2}\left(\frac{\theta^2-2y\theta}{\sigma^2/n} + \frac{\theta^2-2\mu_0\theta}{\tau_0^2} + \frac{(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2})^2}{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}\right)\right] \\
+&= \frac{1}{\sqrt{2\pi\tau_n^2}}exp\left[\frac{-1}{2}\left(\frac{\theta^2}{\tau_n^2}-2\theta\left(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2}\right)+\frac{(\frac{ny}{\sigma^2}+\frac{\mu_0}{\tau_0^2})^2}{\frac{n}{\sigma^2}+\frac{1}{\tau_0^2}}\right)\right] \\
+&= \frac{1}{\sqrt{2\pi\tau_n^2}}exp\left[\frac{-1}{2\tau_n^2}\left(\sigma^2 - 2\sigma\mu_n + \mu_n^2\right)\right] \\
+&= \frac{1}{\sqrt{2\pi\tau_n^2}}exp\left[\frac{-1}{2\tau_n^2}\left(\sigma^2 - \mu_n\right)^2\right]
+\end{aligned},
+$$
+as desired.
