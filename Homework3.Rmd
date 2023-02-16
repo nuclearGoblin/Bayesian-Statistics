@@ -35,3 +35,9 @@ points(theta,prior(theta),col='blue')
 legend(.8,1.3,c("likelihood","prior"),c("black","blue"))
 ```
 
+### Problem 2:
+**Determine the MAP estimate of $\theta$.**
+
+$$
+\frac{dp}{d\theta} = 
+$$
