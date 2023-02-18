@@ -1,0 +1,54 @@
+---
+title: "Homework4"
+author: "Kitty Harris"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+### Problem 1:
+**Voter turnout has been a popular talking point in recent elections. To get a sense of voter turnout in Colorado, a national polling company contacted randomly selected registered Colorado voters until they reached 200 persons who said that they had voted. 303 persons said they had not voted, for a total sample size of 503. The response $y$ is the number of failures before getting the 200th registered voter who had voted. Thus, $y$ can be modeled as a negative binomial distribution with $n$ successes and probability of success (a registered voter stating they voted), i.e., $y|n$~Neg-Bin$(n,\theta)$, and**
+
+$$
+p(y|n,\theta) = \frac{\Gamma(y+n)}{\Gamma(n)y!}\theta^n(1-\theta)^y
+$$
+
+**Based on what you’ve heard, you believe that the true proportion of registered voters that actually vote is less than 50%, but you’re not super confident about this. Thus, you chose a Beta(1.1, 1.5) prior distribution for $\theta$. Let $q(\theta|y) = p(y|\theta)p(\theta)$.**
+
+**Implement a rejection sampler for the posterior distribution.**
+
+#### a. Determine a elevant proposal distribution. What proposal distribution will you use? You are NOT allowed to use a uniform distribution. Why did you choose this one?
+
+First, we find our unnormalized posterior explicitly:
+
+$$q(\theta|y) = \frac{\Gamma(y+n)}{\Gamma(n)y!}\theta^n(1-\theta)^y \frac{\theta^{0.1}(1-\theta)^{0.5}}{B(1.1,1.5)}$$
+
+The first fraction is less than 1 for our known values of $y$ and $n$, as is $\theta^n(1-\theta)^y$ for $\theta \in (0,1)$ -- therefore, the unnormalized posterior will be enclosed by a Beta(1.1,1.5) distribution. The Beta(1.1,1.5) distribution should also have the same support as the unnormalized posterior, and because it has a form matching part of the posterior, it will be easy to determine $M$.
+
+\newpage
+
+#### b. Determine a scale constant $M$ to create an appropriate bounding function $Mg(\theta)$. Create a plot of $Mg(\theta)$ and $q(\theta|y)$ versus $\theta$, making sure to clearly distinguish the two functions.
+
+The ratio is
+
+$$\frac{q(\theta|y)}{g(\theta)} = \frac{\Gamma(y+n)}{\Gamma(n)\Gamma(y+1)}\theta^n(1-\theta)^y$$
+
+so we maximize $\theta^{200}(1-\theta)^{303}$ to find the value of $\theta$ at which we will evaluate $M$:
+
+```{r}
+to_maximize <- function(x){x^200*(1-x)^303}
+thmax = optimize(to_maximize,interval=c(0,1),maximum=TRUE)$maximum
+M = exp(lgamma(503)-lgamma(200)-lgamma(304))*to_maximize(thmax)
+print(M)
+
+Mg <- function(x){M*dbeta(x,shape1=1.1,shape2=1.5)}
+q <- function(x){to_maximize(x)*exp(lgamma(503)-lgamma(200)-lgamma(304))*dbeta(x,shape1=1.1,shape2=1.5)}
+
+theta = seq(0, 1, length.out=1000)
+plot(theta,Mg(theta),ylab="probability density",type='l',col='black')
+lines(theta,q(theta),col='blue')
+legend("topright",legend=c("proposal","unnormalized posterior"),col=c("black","blue"),lty=1)
+```
+\newpage
+
+#### c. Run the rejection sampler so that 100,000 samples are accepted. Then create a plot showing the true posterior density (the normalizing constant was determined in the previous homework) versus the approximate density coming from the rejection sampler, making sure to clearly distinguish the two functions.
