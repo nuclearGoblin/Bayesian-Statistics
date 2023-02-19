@@ -52,3 +52,72 @@ legend("topright",legend=c("proposal","unnormalized posterior"),col=c("black","b
 \newpage
 
 #### c. Run the rejection sampler so that 100,000 samples are accepted. Then create a plot showing the true posterior density (the normalizing constant was determined in the previous homework) versus the approximate density coming from the rejection sampler, making sure to clearly distinguish the two functions.
+
+```{r}
+nsamp = 100000 #Start by generating the number of samples we need
+list = rbeta(nsamp-length(list),shape1=1.1,shape2=1.5)
+for(i in 1:length(list)){ #Now run initial rejection portion of algorithm
+  reject = runif(1,0,Mg(list[i]))
+  if(reject>q(list[i])){ #Generate a random value uniform between 0 and the unnormalized posterior.
+    temp = TRUE
+    while(temp){
+      x = rbeta(1,shape1=1.1,shape2=1.5) #Prepare to replace entry
+      if(runif(1,0,Mg(x))<=q(x)){        #And see if we need to reject again
+        temp = FALSE
+        list[i] = x
+      } 
+    }
+  }
+}
+```
+
+```{r}
+theta = seq(0,1,length.out=10000)
+hist(as.numeric(list),ylab='probability density',xlab='theta',freq=FALSE,main='',lty='blank',col='blue',
+     breaks=seq(min(list),max(list),length.out=50),ylim=c(0,20),xlim=c(0.3,0.5))
+yconst <- integrate(q,lower=0,upper=1)$value
+lines(theta,q(theta)/yconst,lwd=2)
+
+legend("topright",legend=c("calculated","a"),lwd=c(2,NA),pch=c(NA,15),col=c('black','blue'))
+```
+
+### Problem 2:
+**Suppose that the unnormalized bivariate posterior distribution for parameters $\theta_1$ and $\theta_2$ is $q(\theta_1,\theta_2|y) = \theta_1^2exp(-\theta_1\theta_2^2-\theta_2^2+2\theta_2-4\theta_1);\theta_1>0,\theta_2\in(-\infty,\infty)$.**
+
+#### a. Derive the full conditional distribution for $\theta_1$.
+
+The unnormalized full conditional distribution is:
+$$
+p(\theta_1|\theta_2,y) \propto \theta_1^2e^{-(\theta_2^2+4)\theta_1}I(\theta_1>0).
+$$
+To find the normalizing constant, integrate:
+
+$$
+\int_0^\infty \theta_1^2e^{-(\theta_2^2+4)\theta_1}d\theta_1 = \frac{2}{(\theta_2^2+4)^3}
+$$
+This makes the full conditional distribution:
+
+$$
+p(\theta_1|\theta_2,y) = \frac{(\theta_2^2+4)^3}{2}\theta_1^2e^{-(\theta_2^2+4)\theta_1}I(\theta_1>0)
+$$
+
+#### b. Derive the full conditional distribution for $\theta_2$.
+
+$$
+p(\theta_2|\theta_1,y) \propto e^{-(\theta_1+1)\theta_2^2+2\theta_2}
+$$
+
+To find the normalizing constant, integrate:
+
+$$
+\int_{-\infty}^\infty e^{-(\theta_1+1)\theta_2^2+2\theta_2} = \sqrt\frac{\pi}{\theta_1+1} e^{-1/(\theta_1+1)}
+$$
+
+This makes the full conditional distribution:
+
+$$
+p(\theta_2|\theta_1,y) = \sqrt\frac{\theta_1+1}{\pi}e^{1/(\theta_1+1)}e^{-(\theta_1+1)\theta_2^2+2\theta_2}
+$$
+
+#### c. Run a Gibbs sampler for \theta_1 and \theta_2 for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
+
