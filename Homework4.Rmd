@@ -13,7 +13,7 @@ $$
 p(y|n,\theta) = \frac{\Gamma(y+n)}{\Gamma(n)y!}\theta^n(1-\theta)^y
 $$
 
-**Based on what you’ve heard, you believe that the true proportion of registered voters that actually vote is less than 50%, but you’re not super confident about this. Thus, you chose a Beta(1.1, 1.5) prior distribution for $\theta$. Let $q(\theta|y) = p(y|\theta)p(\theta)$.**
+**Based on what you've heard, you believe that the true proportion of registered voters that actually vote is less than 50%, but you're not super confident about this. Thus, you chose a Beta(1.1, 1.5) prior distribution for $\theta$. Let $q(\theta|y) = p(y|\theta)p(\theta)$.**
 
 **Implement a rejection sampler for the posterior distribution.**
 
@@ -82,7 +82,7 @@ legend("topright",legend=c("calculated","a"),lwd=c(2,NA),pch=c(NA,15),col=c('bla
 ```
 
 ### Problem 2:
-**Suppose that the unnormalized bivariate posterior distribution for parameters $\theta_1$ and $\theta_2$ is $q(\theta_1,\theta_2|y) = \theta_1^2exp(-\theta_1\theta_2^2-\theta_2^2+2\theta_2-4\theta_1);\theta_1>0,\theta_2\in(-\infty,\infty)$.**
+**Suppose that the unnormalized bivariate posterior distribution for parameters $\theta_1$ and $\theta_2$ is $q(\theta_1,\theta_2|y) = \theta_1^2exp(-\theta_1\theta_2^2-\theta_2^2+2\theta_2-4\theta_1)\;\theta_1>0,\theta_2\in(-\infty,\infty)$.**
 
 #### a. Derive the full conditional distribution for $\theta_1$.
 
@@ -119,5 +119,4 @@ $$
 p(\theta_2|\theta_1,y) = \sqrt\frac{\theta_1+1}{\pi}e^{1/(\theta_1+1)}e^{-(\theta_1+1)\theta_2^2+2\theta_2}
 $$
 
-#### c. Run a Gibbs sampler for \theta_1 and \theta_2 for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
-
+#### c. Run a Gibbs sampler for $\theta_1$ and $\theta_2$ for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
