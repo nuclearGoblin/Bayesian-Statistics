@@ -194,3 +194,40 @@ p(k|\lambda,\phi,y) = \frac{\exp(k(\phi-\lambda))\left(\frac{\lambda}{\phi}\righ
 $$
 **Run a 100,000 cycle Gibbs sampler using the distributions determined in parts 1 through 3 to approximate the posterior distribution of the three parameters.**
 
+```{r}
+B = 100000 #n cycles
+dat = read.delim("coal.txt",header=TRUE,sep=" "); y = dat["disasters"]
+
+lambda = 1; phi = 1; k = 1;
+probs = function(k,lam,phi){
+  list = numeric(nrow(y))
+  for(i in 1:nrow(y)){
+    list[i] = exp(k*(phi-lam))*(lam/phi)^(sum(head(y,k)))
+  }
+  #list = list/sum(list) #normalize #do this later actually
+  return(list)
+}
+
+kgen = runif(B,0,1) #pre-generate our k generators
+lambdapost = numeric(B); phipost = numeric(B); kpost = numeric(B)
+for (i in 1:B){ #run a Gibbs sampler for B cycles
+  lambda = rgamma(1,4+sum(head(y,k)),1/(k+1)); lambdapost[i] = lambda
+  phi = rgamma(1,1+sum(head(y,k)),1/(112-k+1/2)); phipost[i] = phi
+  #generate the greatest k point with probability <= the generated prob
+  kprob = 0; knew = 0 #start k=0 because we'll get an erroneous +1
+  problist = probs(k,lambda,phi); probstotal = sum(problist)
+  while(kprob<kgen[i]){ 
+    kprob = (kprob*probstotal + problist[i])/probstotal
+    knew = knew+1
+  }
+  k = knew; kpost[i] = k
+}
+
+hist(lambdapost,ylab='probability density',xlab='lambda',freq=FALSE,main='',
+     breaks=seq(min(lambdapost),max(lambdapost),                                                                  length.out=50))
+hist(phipost,ylab='probability density',xlab='phi',freq=FALSE,main='',
+     breaks=seq(min(phipost),max(phipost),                                                                  length.out=50))
+hist(kpost,ylab='probability density',xlab='k',freq=FALSE,main='',
+     breaks=seq(min(kpost),max(kpost),                                                                  length.out=50))
+
+```
