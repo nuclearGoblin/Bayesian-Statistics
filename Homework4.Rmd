@@ -67,7 +67,7 @@ for(i in 1:length(list)){ #Now run initial rejection portion of algorithm
       if(runif(1,0,Mg(x))<=q(x)){        #And see if we need to reject again
         temp = FALSE
         list[i] = x
-      } 
+      }
     }
   }
 }
@@ -109,6 +109,8 @@ p(\theta_2|\theta_1,y) & \propto e^{-(\theta_1+1)\theta_2^2+2\theta_2} \\
 
 So $\theta_2|\theta_1,y$~N$\left((\theta_1+1)^{-1},(2(\theta_1+1))^{-1/2}\right)$.
 
+\newpage
+
 #### c. Run a Gibbs sampler for $\theta_1$ and $\theta_2$ for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
 
 We don't have data, so I will choose the initial values somewhat arbitrarily.
@@ -119,13 +121,76 @@ theta1 = 15; theta2 = 1; #use theta2 = 1 and theta1 = mean(Gamma(3,5))
 theta1post = numeric(B); theta2post = numeric(B)
 #run a Gibbs sampler for B cycles
 for (i in 1:B){
-  theta1 = rgamma(3,theta2^2+1); theta1post[i] = theta1
-  theta2 = rnorm(1/(theta1+1),sqrt(1/(2*(theta1+1)))); theta2post[i] = theta2
+  theta1 = rgamma(1,3,theta2^2+1); theta1post[i] = theta1
+  theta2 = rnorm(1,1/(theta1+1),sqrt(1/(2*(theta1+1)))); theta2post[i] = theta2
 }
+
+hist(theta1post,ylab='probability density',xlab='theta1',freq=FALSE,main='',
+     breaks=seq(min(theta1post),max(theta1post),                                                                  length.out=50))
+```
+\newpage
+```{r}
+hist(theta2post,ylab='probability density',xlab='theta2',freq=FALSE,main='',
+     breaks=seq(min(theta2post),max(theta2post),length.out=50))
 ```
 
-```{r}
-hist(theta1post,ylab='probability density',xlab='theta1',freq=FALSE,main='')
-hist(theta2post,ylab='probability density',xlab='theta2',freq=FALSE,main='')
-```
+\newpage
+
+### Problem 3: 
+**Consider the data in coal.txt, which is counts for the number of coal mine disasters over a 112-year period (1851 to 1962) in the United Kingdom. The data have relatively high disaster counts in the early era, and relatively low counts in the later era. When did technology improvements and safety practices have an actual effect on the rate of serious accidents? We assume that our data can be
+described as having a Poisson($\lambda$) distribution for the first $k$ years, and a Poisson($\phi$) distribution for the years $k+1,...,112$. In this model, $k$ is the year that the "change" occurred when technology and/or safety improvements changed the pattern of coal mine disasters. We assume that within years $1,...,k$ the number of disasters is i.i.d. Poisson($\lambda$), and the number of disasters in years $k+1,...,112$ is i.i.d. Poisson($\phi$). Our interest lies in finding the posterior distributions for $\lambda$,$\phi$, and $k$. Assume a Gamma(4, 1) prior distribution for $\lambda$, a Gamma(1, 2) prior distribution for $\phi$ and a a discrete uniform prior distribution on [1,2, . ,112] for $k$. A discrete uniform prior distribution means that each possible value in the sample space has equal probability of occurring.**
+
+First, the data distribution is:
+
+$$\begin{aligned}
+& p(y_i|k,\lambda,\phi) & =&  
+  \begin{cases}
+    \frac{e^{-\lambda}\lambda^{y_i}}{y_i!} & i\leq k\\
+    \frac{e^{-\phi}\phi^{y_i}}{y_i!} & i>k
+  \end{cases} \\
+\therefore & p(y|k,\lambda\phi) &=& \prod_{i=1}^k\frac{e^{-\lambda}\lambda^{y_i}}{y_i!}\prod_{i=k+1}^{112}\frac{e^{-\phi}\phi^{y_i}}{y_i!} \\
+& & =& e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky_i}\phi^{\sum_{i=k+1}^{112}y_i}\prod_{i=1}^{112}\frac{1}{y_i!}
+\end{aligned}$$
+
+making the posterior:
+
+$$\begin{aligned}
+p(k,\lambda,\phi|y) & \propto p(y|k,\lambda,\phi)p(k,\lambda,\phi) = p(y|k,\lambda,\phi)p(k)p(\lambda)p(\phi)
+\end{aligned}$$
+
+where
+
+$$
+p(k) = \frac{1}{112} \\
+p(\lambda) = \frac{1^{-4}\lambda^{4-1}e^{-\lambda/1}}{\Gamma(4)} = \frac{\lambda^3e^{-\lambda}}{6} \\
+p(\phi) = \frac{2^{-1}\phi^{1-1}e^{-\phi/2}}{\Gamma(1)} = \frac{e^{-\phi/2}}{2}
+$$
+#### a. Determine the full conditional distribution for $\lambda$. It is a common distribution. Hint: The distribution will depend on a sum of the counts that depends on the value of $k$. \break
+
+We start by dropping the $p(k),p(\phi)$ terms as they will not have terms depending on $\lambda$, then drop other non-$\lambda$ terms. 
+
+$$\begin{aligned}
+p(\lambda|k,\phi,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky_i}\phi^{\sum_{i=k+1}^{112}y_i}\frac{\lambda^3e^{-\lambda}}{6}\prod_{i=1}^{112}\frac{1}{y_i!} \\
+&\propto e^{-(k+1)\lambda}\lambda^{3+\sum_{i=1}^ky_i}, \\
+\end{aligned}$$
+
+so $\lambda|k,\phi,y$ ~ Gamma$\left(4+\sum_{i=1}^ky_i,\frac{1}{k+1}\right)$.
+
+#### b. Determine the full conditional distribution for $\phi$. It is a common distribution. Hint: The distribution will depend on a sum of the counts that depends on the value of $k$. \break
+
+We start by dropping the $p(k),p(\lambda)$ terms as they will not have terms depending on $\phi$, then drop other non-$\phi$ terms. 
+
+$$\begin{aligned}
+p(\phi|k,\lambda,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky_i}\phi^{\sum_{i=k+1}^{112}y_i}\frac{e^{-\phi/2}}{2}\prod_{i=1}^{112}\frac{1}{y_i!} \\
+&\propto e^{-(112-k)\phi}\phi^{\sum_{i=k+1}^{112}y_i}e^{-\phi/2} \\
+&= e^{-(112-k+\frac{1}{2})\phi}\phi^{\sum_{i=k+1}^{112}y_i},
+\end{aligned}$$
+
+so $\phi|k,\lambda,y$ ~ Gamma$\left(1+\sum_{i=k+1}^{112}y_i,\frac{1}{112-k+1/2}\right)$
+
+#### c. The full conditional distribution for $k$ is
+$$
+p(k|\lambda,\phi,y) = \frac{\exp(k(\phi-\lambda))\left(\frac{\lambda}{\phi}\right)^{\sum_{i=1}^ky_i}}{\sum_{k=1}^{112}\left(\exp(k(\phi-\lambda))\left(\frac{\lambda}{\phi}\right)^{\sum_{i=1}^ky_i}\right)}
+$$
+**Run a 100,000 cycle Gibbs sampler using the distributions determined in parts 1 through 3 to approximate the posterior distribution of the three parameters.**
 
