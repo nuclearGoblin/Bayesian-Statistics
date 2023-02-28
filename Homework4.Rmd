@@ -19,6 +19,7 @@ $$
 
 #### a. Determine a elevant proposal distribution. What proposal distribution will you use? You are NOT allowed to use a uniform distribution. Why did you choose this one?
 
+
 First, we find our unnormalized posterior explicitly:
 
 $$q(\theta|y) = \frac{\Gamma(y+n)}{\Gamma(n)y!}\theta^n(1-\theta)^y \frac{\theta^{0.1}(1-\theta)^{0.5}}{B(1.1,1.5)}$$
@@ -29,7 +30,8 @@ The first fraction is less than 1 for our known values of $y$ and $n$, as is $\t
 
 #### b. Determine a scale constant $M$ to create an appropriate bounding function $Mg(\theta)$. Create a plot of $Mg(\theta)$ and $q(\theta|y)$ versus $\theta$, making sure to clearly distinguish the two functions.
 
-The ratio is
+
+The ratio is:
 
 $$\frac{q(\theta|y)}{g(\theta)} = \frac{\Gamma(y+n)}{\Gamma(n)\Gamma(y+1)}\theta^n(1-\theta)^y$$
 
@@ -86,16 +88,12 @@ legend("topright",legend=c("calculated","a"),lwd=c(2,NA),pch=c(NA,15),col=c('bla
 
 #### a. Derive the full conditional distribution for $\theta_1$.
 
+
 The unnormalized full conditional distribution is:
 $$
 p(\theta_1|\theta_2,y) \propto \theta_1^2e^{-(\theta_2^2+4)\theta_1}I(\theta_1>0).
 $$
-To find the normalizing constant, integrate:
-
-$$
-\int_0^\infty \theta_1^2e^{-(\theta_2^2+4)\theta_1}d\theta_1 = \frac{2}{(\theta_2^2+4)^3}
-$$
-This makes the full conditional distribution:
+This is the kernel of a Gamma distribution; $\theta_1|\theta_2,y$~Gamma$(3,\theta_2^2+4)$
 
 $$
 p(\theta_1|\theta_2,y) = \frac{(\theta_2^2+4)^3}{2}\theta_1^2e^{-(\theta_2^2+4)\theta_1}I(\theta_1>0)
@@ -103,21 +101,17 @@ $$
 
 #### b. Derive the full conditional distribution for $\theta_2$.
 
-$$
-p(\theta_2|\theta_1,y) \propto e^{-(\theta_1+1)\theta_2^2+2\theta_2}
-$$
+We start by finding the kernel:
 
-To find the normalizing constant, integrate:
+$$\begin{aligned}
+p(\theta_2|\theta_1,y) & \propto e^{-(\theta_1+1)\theta_2^2+2\theta_2} \\
+& = exp\left[-\frac{1}{2}\left(2(\theta_1+1)\theta_2^2-4\theta_2\right)\right] \\
+& = exp\left[-\frac{1}{2}2(\theta_1+1)\left(\theta_2^2-\frac{2}{\theta_1+1}\theta_2\right)\right] \\
+& \propto exp\left[-\frac{1}{2}2(\theta_1+1)\left(\theta_2^2-\frac{2}{\theta_1+1}\theta_2+\frac{1}{(\theta_1+1)^2}\right)\right]
+\end{aligned}$$
 
-$$
-\int_{-\infty}^\infty e^{-(\theta_1+1)\theta_2^2+2\theta_2} = \sqrt\frac{\pi}{\theta_1+1} e^{-1/(\theta_1+1)}
-$$
+So $\theta_2|\theta_1,y$~N$\left((\theta_2+1)^{-1/2},(2(\theta_1+1)^{-1/2})\right)$.
 
-This makes the full conditional distribution:
-
-$$
-p(\theta_2|\theta_1,y) = \sqrt\frac{\theta_1+1}{\pi}e^{1/(\theta_1+1)}e^{-(\theta_1+1)\theta_2^2+2\theta_2}
-$$
 
 <<<<<<< Updated upstream
 #### c. Run a Gibbs sampler for $\theta_1$ and $\theta_2$ for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
