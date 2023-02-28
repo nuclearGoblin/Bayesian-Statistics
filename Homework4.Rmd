@@ -119,4 +119,15 @@ $$
 p(\theta_2|\theta_1,y) = \sqrt\frac{\theta_1+1}{\pi}e^{1/(\theta_1+1)}e^{-(\theta_1+1)\theta_2^2+2\theta_2}
 $$
 
+<<<<<<< Updated upstream
 #### c. Run a Gibbs sampler for $\theta_1$ and $\theta_2$ for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
+=======
+#### c. Run a Gibbs sampler for \theta_1 and \theta_2 for 100,000 cycles. Plot the posterior distributions of $\theta_1$ and $\theta_2$ (individually).
+
+
+
+```{r}
+
+```
+
+>>>>>>> Stashed changes
