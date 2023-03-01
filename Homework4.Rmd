@@ -162,8 +162,8 @@ where
 
 $$
 p(k) = \frac{1}{112} \\
-p(\lambda) = \frac{1^{-4}\lambda^{4-1}e^{-\lambda/1}}{\Gamma(4)} = \frac{\lambda^3e^{-\lambda}}{6} \\
-p(\phi) = \frac{2^{-1}\phi^{1-1}e^{-\phi/2}}{\Gamma(1)} = \frac{e^{-\phi/2}}{2}
+p(\lambda) = \frac{1^{-4}\lambda^{4-1}e^{-\lambda*1}}{\Gamma(4)} = \frac{\lambda^3e^{-\lambda}}{6} \\
+p(\phi) = \frac{2^{-1}\phi^{1-1}e^{-\phi*2}}{\Gamma(1)} = \frac{e^{-2\phi}}{2}
 $$
 #### a. Determine the full conditional distribution for $\lambda$. It is a common distribution. Hint: The distribution will depend on a sum of the counts that depends on the value of $k$. \break
 
@@ -174,19 +174,19 @@ p(\lambda|k,\phi,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky
 &\propto e^{-(k+1)\lambda}\lambda^{3+\sum_{i=1}^ky_i}, \\
 \end{aligned}$$
 
-so $\lambda|k,\phi,y$ ~ Gamma$\left(4+\sum_{i=1}^ky_i,\frac{1}{k+1}\right)$.
+so $\lambda|k,\phi,y$ ~ Gamma$\left(4+\sum_{i=1}^ky_i,k+1\right)$.
 
 #### b. Determine the full conditional distribution for $\phi$. It is a common distribution. Hint: The distribution will depend on a sum of the counts that depends on the value of $k$. \break
 
 We start by dropping the $p(k),p(\lambda)$ terms as they will not have terms depending on $\phi$, then drop other non-$\phi$ terms. 
 
 $$\begin{aligned}
-p(\phi|k,\lambda,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky_i}\phi^{\sum_{i=k+1}^{112}y_i}\frac{e^{-\phi/2}}{2}\prod_{i=1}^{112}\frac{1}{y_i!} \\
-&\propto e^{-(112-k)\phi}\phi^{\sum_{i=k+1}^{112}y_i}e^{-\phi/2} \\
-&= e^{-(112-k+\frac{1}{2})\phi}\phi^{\sum_{i=k+1}^{112}y_i},
+p(\phi|k,\lambda,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky_i}\phi^{\sum_{i=k+1}^{112}y_i}\frac{e^{-2\phi}}{2}\prod_{i=1}^{112}\frac{1}{y_i!} \\
+&\propto e^{-(112-k)\phi}\phi^{\sum_{i=k+1}^{112}y_i}e^{-2\phi} \\
+&= e^{-(112-k+2)\phi}\phi^{\sum_{i=k+1}^{112}y_i},
 \end{aligned}$$
 
-so $\phi|k,\lambda,y$ ~ Gamma$\left(1+\sum_{i=k+1}^{112}y_i,\frac{1}{112-k+1/2}\right)$
+so $\phi|k,\lambda,y$ ~ Gamma$\left(1+\sum_{i=k+1}^{112}y_i,112-k+1/2\right)$
 
 #### c. The full conditional distribution for $k$ is
 $$
@@ -198,36 +198,42 @@ $$
 B = 100000 #n cycles
 dat = read.delim("coal.txt",header=TRUE,sep=" "); y = dat["disasters"]
 
-lambda = 1; phi = 1; k = 1;
-probs = function(k,lam,phi){
+lambda = 16/exp(1); phi = 1/exp(2); k = 56; #using means of priors for starting points
+probsgen = function(lambda,phi){
   list = numeric(nrow(y))
   for(i in 1:nrow(y)){
-    list[i] = exp(k*(phi-lam))*(lam/phi)^(sum(head(y,k)))
+    list[i] = i*(phi-lambda) + (sum(head(y,i)))*log(lambda/phi) #log of numerator
+    list = list-max(list) #values "divided" by the mean to prevent overflow
+    #list = exp(list)     #(^ since we are inside exponent)
   }
-  #list = list/sum(list) #normalize #do this later actually
-  return(list)
+  return(list) #unnormalized!
 }
+
+#progress bar
+pb <- txtProgressBar(min=0,max=B,style=3,width=50,char="|")
 
 kgen = runif(B,0,1) #pre-generate our k generators
 lambdapost = numeric(B); phipost = numeric(B); kpost = numeric(B)
 for (i in 1:B){ #run a Gibbs sampler for B cycles
-  lambda = rgamma(1,4+sum(head(y,k)),1/(k+1)); lambdapost[i] = lambda
-  phi = rgamma(1,1+sum(head(y,k)),1/(112-k+1/2)); phipost[i] = phi
+  lambda = rgamma(1,4+sum(head(y,k)),k+1); lambdapost[i] = lambda
+  phi = rgamma(1,1+sum(tail(y,112-k)),112-k+2); phipost[i] = phi
   #generate the greatest k point with probability <= the generated prob
-  kprob = 0; knew = 0 #start k=0 because we'll get an erroneous +1
-  problist = probs(k,lambda,phi); probstotal = sum(problist)
-  while(kprob<kgen[i]){ 
-    kprob = (kprob*probstotal + problist[i])/probstotal
-    knew = knew+1
-  }
-  k = knew; kpost[i] = k
+  probunexp = probsgen(lambda,phi); probunnorm = exp(probunexp); 
+  probtotal = sum(probunnorm); problist = probunnorm/probtotal
+  cmf = numeric(nrow(y))
+  for(j in 1:nrow(y)){cmf[j] = sum(head(problist,j))} #find the cumulative density
+  k = findInterval(kgen[i],cmf); kpost[i] = k
+  
+  setTxtProgressBar(pb, i)
 }
 
+close(pb); library(beepr); beep()
+
 hist(lambdapost,ylab='probability density',xlab='lambda',freq=FALSE,main='',
-     breaks=seq(min(lambdapost),max(lambdapost),                                                                  length.out=50))
+     breaks=seq(min(lambdapost),max(lambdapost),length.out=50))
 hist(phipost,ylab='probability density',xlab='phi',freq=FALSE,main='',
-     breaks=seq(min(phipost),max(phipost),                                                                  length.out=50))
+     breaks=seq(min(phipost),max(phipost),length.out=50))
 hist(kpost,ylab='probability density',xlab='k',freq=FALSE,main='',
-     breaks=seq(min(kpost),max(kpost),                                                                  length.out=50))
+     breaks=seq(min(kpost),max(kpost),length.out=50))
 
 ```
