@@ -202,7 +202,7 @@ lambda = 16/exp(1); phi = 1/exp(2); k = 56; #using means of priors for starting 
 probsgen = function(lambda,phi){
   list = numeric(nrow(y))
   for(i in 1:nrow(y)){
-    list[i] = i*(phi-lambda) + (sum(head(y,i)))*log(lambda/phi) #log of numerator
+    list[i] = i*(phi-lambda) + sum(head(y,i))*log(lambda/phi) #log of numerator
     list = list-max(list) #values "divided" by the mean to prevent overflow
     #list = exp(list)     #(^ since we are inside exponent)
   }
@@ -217,12 +217,13 @@ lambdapost = numeric(B); phipost = numeric(B); kpost = numeric(B)
 for (i in 1:B){ #run a Gibbs sampler for B cycles
   lambda = rgamma(1,4+sum(head(y,k)),k+1); lambdapost[i] = lambda
   phi = rgamma(1,1+sum(tail(y,112-k)),112-k+2); phipost[i] = phi
-  #generate the greatest k point with probability <= the generated prob
-  probunexp = probsgen(lambda,phi); probunnorm = exp(probunexp); 
-  probtotal = sum(probunnorm); problist = probunnorm/probtotal
-  cmf = numeric(nrow(y))
-  for(j in 1:nrow(y)){cmf[j] = sum(head(problist,j))} #find the cumulative density
-  k = findInterval(kgen[i],cmf); kpost[i] = k
+  #generate k next
+  probunexp = probsgen(lambda,phi); 
+  probunnorm = exp(probunexp); 
+  probunnorm = probunnorm/mean(probunnorm) #fix rounding issue
+  probtotal = sum(probunnorm); 
+  problist = probunnorm/probtotal
+  k = sample(1:nrow(y),1,prob=problist); kpost[i] = k
   
   setTxtProgressBar(pb, i)
 }
