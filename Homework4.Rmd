@@ -186,7 +186,7 @@ p(\phi|k,\lambda,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky
 &= e^{-(112-k+2)\phi}\phi^{\sum_{i=k+1}^{112}y_i},
 \end{aligned}$$
 
-so $\phi|k,\lambda,y$ ~ Gamma$\left(1+\sum_{i=k+1}^{112}y_i,112-k+1/2\right)$
+so $\phi|k,\lambda,y$ ~ Gamma$\left(1+\sum_{i=k+1}^{112}y_i,112-k+2\right)$
 
 #### c. The full conditional distribution for $k$ is
 $$
@@ -203,22 +203,20 @@ probsgen = function(lambda,phi){
   list = numeric(nrow(y))
   for(i in 1:nrow(y)){
     list[i] = i*(phi-lambda) + sum(head(y,i))*log(lambda/phi) #log of numerator
-    list = list-max(list) #values "divided" by the mean to prevent overflow
-    #list = exp(list)     #(^ since we are inside exponent)
   }
-  return(list) #unnormalized!
+  return(list) #unnormalized and unexponentiated!
 }
 
 #progress bar
 pb <- txtProgressBar(min=0,max=B,style=3,width=50,char="|")
 
-kgen = runif(B,0,1) #pre-generate our k generators
+#Set up space for sampler
 lambdapost = numeric(B); phipost = numeric(B); kpost = numeric(B)
 for (i in 1:B){ #run a Gibbs sampler for B cycles
   lambda = rgamma(1,4+sum(head(y,k)),k+1); lambdapost[i] = lambda
   phi = rgamma(1,1+sum(tail(y,112-k)),112-k+2); phipost[i] = phi
   #generate k next
-  probunexp = probsgen(lambda,phi); 
+  probunexp = probsgen(lambda,phi); probunexp = probunexp - mean(probunexp);
   probunnorm = exp(probunexp); 
   probunnorm = probunnorm/mean(probunnorm) #fix rounding issue
   probtotal = sum(probunnorm); 
