@@ -227,12 +227,39 @@ for (i in 1:B){ #run a Gibbs sampler for B cycles
 }
 
 close(pb); library(beepr); beep()
+```
 
+```{r}
 hist(lambdapost,ylab='probability density',xlab='lambda',freq=FALSE,main='',
      breaks=seq(min(lambdapost),max(lambdapost),length.out=50))
 hist(phipost,ylab='probability density',xlab='phi',freq=FALSE,main='',
      breaks=seq(min(phipost),max(phipost),length.out=50))
 hist(kpost,ylab='probability density',xlab='k',freq=FALSE,main='',
-     breaks=seq(min(kpost),max(kpost),length.out=50))
+     breaks=seq(min(kpost),max(kpost),length.out=30))
 
+```
+
+#### d. Determine the posterior mean, median, variance, and 95% central posterior interval for each parameter. \break
+
+```{r}
+tab = matrix(c(mean(lambdapost),var(lambdapost),quantile(lambdapost,c(0.25,.975)),
+               mean(phipost),var(phipost),quantile(phipost,c(0.25,.975)),
+               mean(kpost),var(kpost),quantile(kpost,c(0.25,.975))),
+             ncol=4,nrow=3,byrow=TRUE)
+rownames(tab) = c("lambda","phi","k"); 
+colnames(tab) = c("mean","var","interval","")
+tab = as.table(tab); tab
+```
+
+#### e. Let $m$ be the median of the posterior distribution for $k$. Create a time series plot of the counts where the first 𝑚 years are shown in blue, while the remaining years are shown in orange. This distinguishes the years where we have a Poisson($\lambda$) from a Poisson($\phi$) distribution. \break
+
+```{r}
+m = floor(median(kpost)) #take floor because there are an even number of points
+
+lowdat = head(dat,m); highdat = tail(dat,112-m)
+
+plot(lowdat,xlim=c(min(dat['year']),max(dat['year'])),ylim=c(0,max(y)),pch=21,bg='blue')
+points(highdat,pch=21,bg='orange')
+
+legend('topright',c("lambda","phi"),fill=c("blue","orange"))
 ```
