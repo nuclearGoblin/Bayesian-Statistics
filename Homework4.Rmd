@@ -188,6 +188,8 @@ p(\phi|k,\lambda,y) &\propto e^{-k\lambda}e^{-(112-k)\phi}\lambda^{\sum_{i=1}^ky
 
 so $\phi|k,\lambda,y$ ~ Gamma$\left(1+\sum_{i=k+1}^{112}y_i,112-k+2\right)$
 
+\newpage
+
 #### c. The full conditional distribution for $k$ is
 $$
 p(k|\lambda,\phi,y) = \frac{\exp(k(\phi-\lambda))\left(\frac{\lambda}{\phi}\right)^{\sum_{i=1}^ky_i}}{\sum_{k=1}^{112}\left(\exp(k(\phi-\lambda))\left(\frac{\lambda}{\phi}\right)^{\sum_{i=1}^ky_i}\right)}
@@ -227,19 +229,26 @@ for (i in 1:B){ #run a Gibbs sampler for B cycles
 }
 
 close(pb); library(beepr); beep()
-```
 
-```{r}
 hist(lambdapost,ylab='probability density',xlab='lambda',freq=FALSE,main='',
      breaks=seq(min(lambdapost),max(lambdapost),length.out=50))
+```
+\newpage
+```{r}
 hist(phipost,ylab='probability density',xlab='phi',freq=FALSE,main='',
      breaks=seq(min(phipost),max(phipost),length.out=50))
+```
+\newpage
+```{r}
 hist(kpost,ylab='probability density',xlab='k',freq=FALSE,main='',
      breaks=seq(min(kpost),max(kpost),length.out=30))
 
 ```
+\newpage
 
 #### d. Determine the posterior mean, median, variance, and 95% central posterior interval for each parameter. \break
+
+**Values:**
 
 ```{r}
 tab = matrix(c(mean(lambdapost),var(lambdapost),quantile(lambdapost,c(0.25,.975)),
@@ -251,8 +260,11 @@ colnames(tab) = c("mean","var","interval","")
 tab = as.table(tab); tab
 ```
 
-#### e. Let $m$ be the median of the posterior distribution for $k$. Create a time series plot of the counts where the first 𝑚 years are shown in blue, while the remaining years are shown in orange. This distinguishes the years where we have a Poisson($\lambda$) from a Poisson($\phi$) distribution. \break
+\newpage
 
+#### e. Let $m$ be the median of the posterior distribution for $k$. Create a time series plot of the counts where the first $m$ years are shown in blue, while the remaining years are shown in orange. This distinguishes the years where we have a Poisson($\lambda$) from a Poisson($\phi$) distribution. \break
+
+**Disasters per year**
 ```{r}
 m = floor(median(kpost)) #take floor because there are an even number of points
 
