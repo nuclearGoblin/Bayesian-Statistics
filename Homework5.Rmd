@@ -27,24 +27,24 @@ range(y) #[1] 0.4647718 12.0184742
 #### b. Construct a plot of the unnormalized posterior density of $\beta$. Tip: First compute this on the log scale for a sequence of $\beta$ values. Then subtract the largest value (still on the log scale) and transform the values back to the original scale with the exponential function.
 
 ```{r}
-ddens = function(beta){
+ddensb = function(beta){
   prod = 1
   for(x in y){ prod = prod*dinvgamma(x,3,beta) }
   return(prod)
 }
-vddens = Vectorize(ddens,vectorize.args="beta")
-prior = function(beta){dgamma(beta,4,4)}
+vddensb = Vectorize(ddensb,vectorize.args="beta")
+priorb = function(beta){dgamma(beta,4,4)}
 #q = function(beta){ddens(y,beta)*prior(beta)} #if we skipped log method
-lnq = function(beta){ log(vddens(beta)) + log(prior(beta))}
-redlnq = function(beta){
-  unred = lnq(beta)
-  return(unred - max(unred))
+lnqb = function(beta){ log(vddensb(beta)) + log(priorb(beta))}
+redlnqb = function(beta){
+  unredb = lnqb(beta)
+  return(unredb - max(unredb))
 }
-q = function(beta){ exp(redlnq(beta))}
+qb = function(beta){ exp(redlnqb(beta))}
 
 betaarr = seq(0,10,length.out=1000)
 #print(lnq(betaarr) - max(lnq(betaarr)))
-plot(betaarr,q(betaarr),type='l')
+plot(betaarr,qb(betaarr),type='l')
 ```
 \newpage
 
@@ -53,12 +53,15 @@ plot(betaarr,q(betaarr),type='l')
 The proposal distribution will be a normal distribution, with a mean of $4.30$ extracted from the posterior and a standard deviation of one fifteenth of the mean chosen by trial and error. Because the supports for the proposal and unnormalized posterior distributions are different, we will have to discard any values of $\beta$ less than zero.
 
 ```{r}
-qstatic = q(betaarr)
-mu = betaarr[which.max(qstatic)] #get the beta-pos of peak of q
-print(mu)
-norm = dnorm(betaarr,mean=mu,sd=mu/15)
-plot(betaarr,qstatic,type='l')
-lines(betaarr,norm*max(qstatic)/max(norm),col='blue')
+library(truncnorm) #truncated normal
+
+qstaticb = qb(betaarr)
+mub = betaarr[which.max(qstaticb)] #get the beta-pos of peak of q
+print(mub)
+normb = dtruncnorm(betaarr,mean=mub,sd=mub/15,a=0)
+plot(betaarr,qstaticb,type='l')
+b = max(qstaticb)/max(normb)
+lines(betaarr,normb*b,col='blue')
 legend("topright",legend=c('Unnormalized Posterior','Scaled Proposal Distribution'),col=c('black','blue'),lty=1)
 ```
 \newpage
@@ -66,17 +69,16 @@ legend("topright",legend=c('Unnormalized Posterior','Scaled Proposal Distributio
 #### d. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results.
 
 ```{r}
-library(truncnorm) #truncated normal
 library(coda)      #mcmc tools
 
 mh = function(B, startvalue){
   theta = numeric(B+1) #make room for results.
   theta[1] = startvalue  #start by storing our starting value
-  for (i in 2:B+1){ #for the values we are discarding,
-    theta_star = rtruncnorm(1,mean=mu,sd=mu/15,a=0) #generate a point
+  for (i in 2:(B+1)){ #for the values we are discarding,
+    theta_star = rtruncnorm(1,mean=mub,sd=mub/15,a=0) #generate a point
     #rejection
-    num = ddens(theta_star)*dgamma(theta_star,4,4)/dnorm(theta_star,mean=mu,sd=mu/15)
-    den = ddens(theta[i-1])*dgamma(theta[i-1],4,4)/dnorm(theta[i-1],mean=mu,sd=mu/15)
+    num = ddensb(theta_star)*dgamma(theta_star,4,4)/(b*dtruncnorm(theta_star,mean=mub,sd=mub/15,a=0)) #normal and gamma cut off at same place
+    den = ddensb(theta[i-1])*dgamma(theta[i-1],4,4)/(b*dtruncnorm(theta[i-1],mean=mub,sd=mub/15,a=0))
     r = num/den
     if(runif(1) <= min(r,1)){theta[i] = theta_star
     }else{theta[i] = theta[i-1]}
@@ -108,16 +110,119 @@ The plot over the whole region appears to show somewhat consistent behavior. The
 with similar behavior for all five chains. The final plot over the region 49900 to 50001 shows that values do occasionally get stuck, but not for very long and not concerningly often.
 
 ```{r}
-
+autocorr.plot(mc)
 ```
 
+We see the autocorrelation of each chain drop off very quickly.
+
+```{r}
+print("Heidel"); heidel.diag(mc)
+print("Raftery"); raftery.diag(mc)
+print("Geweke"); geweke.diag(mc)
+```
+
+The Heidelberg & Welch test passes for all chains. Under the Raftery-Lewis diagnostic, burn-ins are very small and the dependence factors pass the test, being only a little over one. By the Geweke diagnostic, variances are all between postive and negative one.
+
+By the above tests, the chains appear to converge well.
+
 ### Problem 2.
-**Assume $y_1,y_2,...y_100 \iid InvGamma(\alpha,\beta)$ with $\beta=4$. Assume $\alpha ~ ????(1,5)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\alpha$. Assume the data are the same as from the previous problem.**
+**Assume $y_1,y_2,...y_100 \iid InvGamma(\alpha,\beta)$ with $\beta=4$. Assume $\alpha ~ U(1,5)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\alpha$. Assume the data are the same as from the previous problem.**
 
 #### a. Construct a plot of the unnormalized posterior density of $\alpha$.
 
+```{r}
+ddens = function(alpha){
+  prod = 1
+  for(x in y){ prod = prod*dinvgamma(x,alpha,4) }
+  return(prod)
+}
+vddens = Vectorize(ddens,vectorize.args="alpha")
+prior = function(alpha){dunif(alpha,min=1,max=5)}
+lnq = function(alpha){ log(vddens(alpha)) + log(prior(alpha))}
+redlnq = function(alpha){
+  unred = lnq(alpha)
+  return(unred - max(unred))
+}
+q = function(alpha){ exp(redlnq(alpha))}
+alphaarr = seq(1,6,length.out=1000)
+#print(lnq(betaarr) - max(lnq(betaarr)))
+print(prior(1))
+plot(alphaarr,q(alphaarr),type='l')
+```
+
 #### b. Decide on a proposal distribution for $\alpha$. Construct a plot of the proposal distribution. Compare this to the previous plot. Repeat the process until they have at least somewhat similar shapes. What proposal distribution did you decide on?
+
+We will, again, use a truncated normal, this time limited to the region $1\leq \alpha\leq 5$. The extracted mean this time is 4.51 and we use a standard deviation of one seventeenth of the mean.
+
+```{r}
+qstatic = q(alphaarr)
+mu = alphaarr[which.max(qstatic)] #get the alpha-pos of peak of q
+print(mu)
+norm = dtruncnorm(alphaarr,mean=mu,sd=mu/17,a=1,b=5)
+plot(alphaarr,qstatic,type='l',xlim=c(1,5))
+a = max(qstatic)/max(norm)
+lines(alphaarr,norm*a,col='blue')
+legend("topleft",legend=c('Unnormalized Posterior','Scaled Proposal Distribution'),col=c('black','blue'),lty=1)
+
+print(q(3))
+
+plot(alphaarr,qstatic,type='l',ylim=c(0,1e-10))
+lines(alphaarr,norm*a,col='blue')
+```
 
 #### c. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results.
 
+```{r}
+library(truncnorm) #truncated normal
+library(coda)      #mcmc tools
+
+mh = function(B, startvalue){
+  theta = numeric(B+1) #make room for results.
+  theta[1] = startvalue  #start by storing our starting value
+  for (i in 2:(B+1)){ #for the values we are discarding,
+    theta_star = rtruncnorm(1,mean=mu,sd=mu/17,a=1,b=5) #generate a point
+    #rejection
+    num = ddens(theta_star)*dunif(theta_star,min=1,max=5)/(a*dtruncnorm(theta_star,mean=mu,sd=mu/15,a=1,b=5))
+    den = ddens(theta[i-1])*dunif(theta[i-1],min=1,max=5)/(a*dtruncnorm(theta[i-1],mean=mu,sd=mu/15,a=1,b=5))
+    r = num/den
+    if(runif(1) <= min(r,1)){theta[i] = theta_star
+    }else{theta[i] = theta[i-1]}
+  }
+  return(theta)
+}
+
+chain1 = mcmc(mh(100000,1.1)[50001:100001]); #1, edge of support, is ill-behaved
+chain2 = mcmc(mh(100000,2)[50001:100001]); 
+chain3 = mcmc(mh(100000,3)[50001:100001]); 
+chain4 = mcmc(mh(100000,4)[50001:100001]); 
+chain5 = mcmc(mh(100000,5)[50001:100001]);
+
+mc = mcmc.list(chain1,chain2,chain3,chain4,chain5)
+summary(mc)
+```
+
 #### d. Assess convergence of your chains.
+
+We begin, again, by looking at the trace plot for the chains.
+
+```{r}
+traceplot(mc) #the full traceplot isn't very readable
+traceplot(mc,xlim=c(49000,50001)) #zoom in #1
+traceplot(mc,xlim=c(49900,50001)) #zoom in #2
+```
+
+Again, we see good behavior in the trace.
+
+```{r}
+autocorr.plot(mc)
+```
+
+Autocorrelation drops off quickly again.
+
+```{r}
+print("Heidel"); heidel.diag(mc)
+print("Raftery"); raftery.diag(mc)
+print("Geweke"); geweke.diag(mc)
+```
+
+We, pass *almost* all of our tests. The Geweke diagnostic indicates that there is a strong correlation in our first case, when we start at the minimum, $\alpha = 1$.
