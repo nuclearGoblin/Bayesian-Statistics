@@ -8,7 +8,7 @@ output:
 ---
 
 ### Problem 1. 
-**Assume $y_1,y_2,...y_100 \iid InvGamma(\alpha,\beta)$ with $\alpha=3$. Assume $\beta ~ Gamma(4,4)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\beta$.**
+**Assume $y_1,y_2,...y_100 \iid$ Inv-Gamma$(\alpha,\beta)$ with $\alpha=3$. Assume $\beta \sim$ Gamma$(4,4)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\beta$.**
 
 #### a. Generate some observed data $y$. To do this, execute the following commands:
 ```{r}
@@ -26,12 +26,90 @@ range(y) #[1] 0.4647718 12.0184742
 
 #### b. Construct a plot of the unnormalized posterior density of $\beta$. Tip: First compute this on the log scale for a sequence of $\beta$ values. Then subtract the largest value (still on the log scale) and transform the values back to the original scale with the exponential function.
 
+```{r}
+ddens = function(beta){
+  prod = 1
+  for(x in y){ prod = prod*dinvgamma(x,3,beta) }
+  return(prod)
+}
+vddens = Vectorize(ddens,vectorize.args="beta")
+prior = function(beta){dgamma(beta,4,4)}
+#q = function(beta){ddens(y,beta)*prior(beta)} #if we skipped log method
+lnq = function(beta){ log(vddens(beta)) + log(prior(beta))}
+redlnq = function(beta){
+  unred = lnq(beta)
+  return(unred - max(unred))
+}
+q = function(beta){ exp(redlnq(beta))}
+
+betaarr = seq(0,10,length.out=1000)
+#print(lnq(betaarr) - max(lnq(betaarr)))
+plot(betaarr,q(betaarr),type='l')
+```
+\newpage
 
 #### c. Decide on a proposal distribution for $\beta$. Construct a plot of the proposal distribution. Compare this to the previous plot. Repeat the process until they have at least somewhat similar shapes. What proposal distribution did you decide on?
 
+The proposal distribution will be a normal distribution, with a mean of $4.30$ extracted from the posterior and a standard deviation of one fifteenth of the mean chosen by trial and error. Because the supports for the proposal and unnormalized posterior distributions are different, we will have to discard any values of $\beta$ less than zero.
+
+```{r}
+qstatic = q(betaarr)
+mu = betaarr[which.max(qstatic)] #get the beta-pos of peak of q
+print(mu)
+norm = dnorm(betaarr,mean=mu,sd=mu/15)
+plot(betaarr,qstatic,type='l')
+lines(betaarr,norm*max(qstatic)/max(norm),col='blue')
+legend("topright",legend=c('Unnormalized Posterior','Scaled Proposal Distribution'),col=c('black','blue'),lty=1)
+```
+\newpage
+
 #### d. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results.
 
+```{r}
+library(truncnorm) #truncated normal
+library(coda)      #mcmc tools
+
+mh = function(B, startvalue){
+  theta = numeric(B+1) #make room for results.
+  theta[1] = startvalue  #start by storing our starting value
+  for (i in 2:B+1){ #for the values we are discarding,
+    theta_star = rtruncnorm(1,mean=mu,sd=mu/15,a=0) #generate a point
+    #rejection
+    num = ddens(theta_star)*dgamma(theta_star,4,4)/dnorm(theta_star,mean=mu,sd=mu/15)
+    den = ddens(theta[i-1])*dgamma(theta[i-1],4,4)/dnorm(theta[i-1],mean=mu,sd=mu/15)
+    r = num/den
+    if(runif(1) <= min(r,1)){theta[i] = theta_star
+    }else{theta[i] = theta[i-1]}
+  }
+  return(theta)
+}
+
+chain1 = mcmc(mh(100000,1)[50001:100001]); 
+chain2 = mcmc(mh(100000,2)[50001:100001]); 
+chain3 = mcmc(mh(100000,3)[50001:100001]); 
+chain4 = mcmc(mh(100000,4)[50001:100001]); 
+chain5 = mcmc(mh(100000,5)[50001:100001]);
+
+mc = mcmc.list(chain1,chain2,chain3,chain4,chain5)
+summary(mc)
+```
+
 #### e. Assess convergence of your chains.
+
+We begin by looking at the trace plot for the chains.
+
+```{r}
+traceplot(mc) #the full traceplot isn't very readable
+traceplot(mc,xlim=c(49000,50001)) #zoom in #1
+traceplot(mc,xlim=c(49900,50001)) #zoom in #2
+```
+
+The plot over the whole region appears to show somewhat consistent behavior. The second plot over the region 49000 to 50001 shows no particular trends,
+with similar behavior for all five chains. The final plot over the region 49900 to 50001 shows that values do occasionally get stuck, but not for very long and not concerningly often.
+
+```{r}
+
+```
 
 ### Problem 2.
 **Assume $y_1,y_2,...y_100 \iid InvGamma(\alpha,\beta)$ with $\beta=4$. Assume $\alpha ~ ????(1,5)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\alpha$. Assume the data are the same as from the previous problem.**
