@@ -11,6 +11,8 @@ output:
 **Assume $y_1,y_2,...y_100 \iid$ Inv-Gamma$(\alpha,\beta)$ with $\alpha=3$. Assume $\beta \sim$ Gamma$(4,4)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\beta$.**
 
 #### a. Generate some observed data $y$. To do this, execute the following commands:
+
+*(Code as given in the question.)*
 ```{r}
 library(bayesutils)
 set.seed(77) 
@@ -24,7 +26,11 @@ sd(y) #[1] 2.244544
 range(y) #[1] 0.4647718 12.0184742
 ```
 
-#### b. Construct a plot of the unnormalized posterior density of $\beta$. Tip: First compute this on the log scale for a sequence of $\beta$ values. Then subtract the largest value (still on the log scale) and transform the values back to the original scale with the exponential function.
+\newpage
+
+#### b. Construct a plot of the unnormalized posterior density of $\beta$. Tip: First compute this on the log scale for a sequence of $\beta$ values. Then subtract the largest value (still on the log scale) and transform the values back to the original scale with the exponential function. \break
+
+Plot over $0\leq \beta \leq 10$:
 
 ```{r}
 ddensb = function(beta){
@@ -43,12 +49,11 @@ redlnqb = function(beta){
 qb = function(beta){ exp(redlnqb(beta))}
 
 betaarr = seq(0,10,length.out=1000)
-#print(lnq(betaarr) - max(lnq(betaarr)))
 plot(betaarr,qb(betaarr),type='l')
 ```
 \newpage
 
-#### c. Decide on a proposal distribution for $\beta$. Construct a plot of the proposal distribution. Compare this to the previous plot. Repeat the process until they have at least somewhat similar shapes. What proposal distribution did you decide on?
+#### c. Decide on a proposal distribution for $\beta$. Construct a plot of the proposal distribution. Compare this to the previous plot. Repeat the process until they have at least somewhat similar shapes. What proposal distribution did you decide on? \break
 
 The proposal distribution will be a normal distribution, with a mean of $4.30$ extracted from the posterior and a standard deviation of one fifteenth of the mean chosen by trial and error. Because the supports for the proposal and unnormalized posterior distributions are different, we will have to discard any values of $\beta$ less than zero.
 
@@ -62,11 +67,14 @@ normb = dtruncnorm(betaarr,mean=mub,sd=mub/15,a=0)
 plot(betaarr,qstaticb,type='l')
 b = max(qstaticb)/max(normb)
 lines(betaarr,normb*b,col='blue')
-legend("topright",legend=c('Unnormalized Posterior','Scaled Proposal Distribution'),col=c('black','blue'),lty=1)
+legend("topright",legend=c('Unnormalized Posterior','Scaled Proposal Distribution'),
+       col=c('black','blue'),lty=1)
 ```
 \newpage
 
-#### d. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results.
+#### d. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results. \break
+
+Since the peak is near 4, we will use the starting values 2, 3, 4, 5, and 6.
 
 ```{r}
 library(coda)      #mcmc tools
@@ -77,7 +85,7 @@ mh = function(B, startvalue){
   for (i in 2:(B+1)){ #for the values we are discarding,
     theta_star = rtruncnorm(1,mean=mub,sd=mub/15,a=0) #generate a point
     #rejection
-    num = ddensb(theta_star)*dgamma(theta_star,4,4)/(b*dtruncnorm(theta_star,mean=mub,sd=mub/15,a=0)) #normal and gamma cut off at same place
+    num = ddensb(theta_star)*dgamma(theta_star,4,4)/(b*dtruncnorm(theta_star,mean=mub,sd=mub/15,a=0))
     den = ddensb(theta[i-1])*dgamma(theta[i-1],4,4)/(b*dtruncnorm(theta[i-1],mean=mub,sd=mub/15,a=0))
     r = num/den
     if(runif(1) <= min(r,1)){theta[i] = theta_star
@@ -86,24 +94,26 @@ mh = function(B, startvalue){
   return(theta)
 }
 
-chain1 = mcmc(mh(100000,1)[50001:100001]); 
-chain2 = mcmc(mh(100000,2)[50001:100001]); 
-chain3 = mcmc(mh(100000,3)[50001:100001]); 
-chain4 = mcmc(mh(100000,4)[50001:100001]); 
-chain5 = mcmc(mh(100000,5)[50001:100001]);
+chain1 = mcmc(mh(100000,2)[50001:100001]); 
+chain2 = mcmc(mh(100000,3)[50001:100001]); 
+chain3 = mcmc(mh(100000,4)[50001:100001]); 
+chain4 = mcmc(mh(100000,5)[50001:100001]); 
+chain5 = mcmc(mh(100000,6)[50001:100001]);
 
 mc = mcmc.list(chain1,chain2,chain3,chain4,chain5)
 summary(mc)
 ```
 
-#### e. Assess convergence of your chains.
+\newpage
+
+#### e. Assess convergence of your chains. \break
 
 We begin by looking at the trace plot for the chains.
 
 ```{r}
-traceplot(mc) #the full traceplot isn't very readable
-traceplot(mc,xlim=c(49000,50001)) #zoom in #1
-traceplot(mc,xlim=c(49900,50001)) #zoom in #2
+traceplot(mc,xlab="") #the full traceplot isn't very readable
+traceplot(mc,xlim=c(49000,50001),xlab="") #zoom in #1
+traceplot(mc,xlim=c(49900,50001),xlab="") #zoom in #2
 ```
 
 The plot over the whole region appears to show somewhat consistent behavior. The second plot over the region 49000 to 50001 shows no particular trends,
@@ -125,10 +135,14 @@ The Heidelberg & Welch test passes for all chains. Under the Raftery-Lewis diagn
 
 By the above tests, the chains appear to converge well.
 
+\newpage
+
 ### Problem 2.
 **Assume $y_1,y_2,...y_100 \iid InvGamma(\alpha,\beta)$ with $\beta=4$. Assume $\alpha ~ U(1,5)$. Use the Metropolis-Hastings algorithm to approximate the posterior distribution of $\alpha$. Assume the data are the same as from the previous problem.**
 
-#### a. Construct a plot of the unnormalized posterior density of $\alpha$.
+#### a. Construct a plot of the unnormalized posterior density of $\alpha$. \break
+
+We construct our plot as before:
 
 ```{r}
 ddens = function(alpha){
@@ -145,12 +159,12 @@ redlnq = function(alpha){
 }
 q = function(alpha){ exp(redlnq(alpha))}
 alphaarr = seq(1,6,length.out=1000)
-#print(lnq(betaarr) - max(lnq(betaarr)))
-print(prior(1))
 plot(alphaarr,q(alphaarr),type='l')
 ```
 
-#### b. Decide on a proposal distribution for $\alpha$. Construct a plot of the proposal distribution. Compare this to the previous plot. Repeat the process until they have at least somewhat similar shapes. What proposal distribution did you decide on?
+\newpage
+
+#### b. Decide on a proposal distribution for $\alpha$. Construct a plot of the proposal distribution. Compare this to the previous plot. Repeat the process until they have at least somewhat similar shapes. What proposal distribution did you decide on? \break
 
 We will, again, use a truncated normal, this time limited to the region $1\leq \alpha\leq 5$. The extracted mean this time is 4.51 and we use a standard deviation of one seventeenth of the mean.
 
@@ -165,12 +179,13 @@ lines(alphaarr,norm*a,col='blue')
 legend("topleft",legend=c('Unnormalized Posterior','Scaled Proposal Distribution'),col=c('black','blue'),lty=1)
 
 print(q(3))
-
-plot(alphaarr,qstatic,type='l',ylim=c(0,1e-10))
-lines(alphaarr,norm*a,col='blue')
 ```
 
-#### c. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results.
+\newpage
+
+#### c. Run 5 MCMC chains with a range of starting values for at least 100,000 iterations. Discard the first half of each chain as warmup. Then combine the results into a mcmc.list and use the summary function to summarize the results. \break
+
+We will use starting values 1.1, 2, 3, 4, and 5 to cover the support roughly evenly.
 
 ```{r}
 library(truncnorm) #truncated normal
@@ -201,19 +216,22 @@ mc = mcmc.list(chain1,chain2,chain3,chain4,chain5)
 summary(mc)
 ```
 
-#### d. Assess convergence of your chains.
+#### d. Assess convergence of your chains. \break
 
 We begin, again, by looking at the trace plot for the chains.
 
 ```{r}
-traceplot(mc) #the full traceplot isn't very readable
-traceplot(mc,xlim=c(49000,50001)) #zoom in #1
-traceplot(mc,xlim=c(49900,50001)) #zoom in #2
+#echo off because these just barely don't fit two to a page.
+par(mar = c(2, 2, 0.1, 0.1)) 
+traceplot(mc,xlab="") #the full traceplot isn't very readable
+traceplot(mc,xlim=c(49000,50001),xlab="") #zoom in #1
+traceplot(mc,xlim=c(49900,50001),xlab="") #suppress xlab to make space on page
 ```
 
 Again, we see good behavior in the trace.
 
 ```{r}
+par(mar = c(2, 2, 0.1, 0.1)) 
 autocorr.plot(mc)
 ```
 
@@ -225,4 +243,4 @@ print("Raftery"); raftery.diag(mc)
 print("Geweke"); geweke.diag(mc)
 ```
 
-We, pass *almost* all of our tests. The Geweke diagnostic indicates that there is a strong correlation in our first case, when we start at the minimum, $\alpha = 1$.
+We, again, pass all of our tests. It appears that these five chains also converge well.
