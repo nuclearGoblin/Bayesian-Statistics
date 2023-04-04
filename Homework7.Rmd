@@ -60,10 +60,26 @@ the precision $\tau$ (or an Inv-Gamma(0.01, 0.01) prior distribution for the dat
 ### Problem 3.
 #### Model 3: Use a conservative Zellner’s g-prior for $\beta$ with $c^2 = 1000$. Provide the posterior mean, standard deviation, 0.025, and 0.975 quantiles for all regression coefficients and the variance $\sigma^2$ for all three models in a simple tabular format. 
 
-
++----------+-----------+------------+------------+---------+
+|Parameter |Mean       |SD          |0.025q      |0.975q   |
++==========+===========+============+============+=========+
+|$\beta_0$ |3.525638710|0.3224330591|2.8923945423|4.1586533|
++----------+-----------+------------+------------+---------+
+|$\beta_1$ |0.722118172|0.1164857662|0.4935365463|0.9516783|
++----------+-----------+------------+------------+---------+
+|$\beta_2$ |0.090062717|0.0243253548|0.0422238087|0.1377916|
++----------+-----------+------------+------------+---------+
+|$\beta_3$ |0.001267039|0.0005805062|0.0001321638|0.0024089|
++----------+-----------+------------+------------+---------+
+|$\beta_4$ |0.023424966|0.0051279238|0.0133200260|0.0335112|
++----------+-----------+------------+------------+---------+
+|$\sigma^2$|0.252165684|0.0376167956|0.1888764559|0.3360667|
++----------+-----------+------------+------------+---------+
 
 ### Problem 4. 
 #### Compare the posterior distributions for $R_b^2$ for all three models (with proper labeling) in a single plot. Which models appears to have the best fit? 
+
+
 
 ### Problem 5. 
 #### Provide a point estimate (using the posterior means) of the regression equation for Model 1. Interpret each of the regression coefficients for Model 1 in the context of the problem.
@@ -77,8 +93,11 @@ the precision $\tau$ (or an Inv-Gamma(0.01, 0.01) prior distribution for the dat
 library(rstan); library(bayesutils); library(coda); 
 library(ggplot2); library(bayesplot); 
 
+#for use later
+n = length(bank_salary$bsalary) #numentries
+v = var(bank_salary$bsalary)    #sample variance
+
 #stan
-n = length(bank_salary$bsalary) #for use later
 stanmod = "
 data {
   int<lower=1>  n;    //num obs
@@ -109,10 +128,14 @@ model{
   bet2 ~ normal(0,sqrt(1002));
   bet3 ~ normal(0,sqrt(1002));
   bet4 ~ normal(0,sqrt(1002));
+}
+generated quantities {
+  real Rbsq;
+  Rbsq = 1 - sigs / v;
 }"
 
 #Format data for stan
-stan_dat = list(n = n, bsal = bank_salary$bsalary,
+stan_dat = list(n = n, v = v, bsal = bank_salary$bsalary,
                 male = bank_salary$male, educ = bank_salary$education, 
                 xp = bank_salary$experience, time = bank_salary$time)
 
@@ -173,11 +196,52 @@ model{
   for(i in 1:n){
     bsal[i] ~ normal(mu[i],sqrt(sigs));
   }
+}
+generated quantities {
+  real Rbsq;
+  Rbsq = 1 - sigs / v;
 }"
 
 #Format data for stan
-stan_dat = list(n = n, V=solve(crossprod(X)), csq = n, mu0 = c(0,0,0,0,0), 
-                bsal = bank_salary$bsalary, X = X)
+stan_dat = list(n = n, v = v, V=solve(crossprod(X)), csq = n, X = X,
+                mu0 = c(0,0,0,0,0), bsal = bank_salary$bsalary)
+
+if (!file.exists("stanmodels/hw7q2.rda")){ #Generate the model if it is missing.
+  mod_zellner = stan_model(model_code = stanmod_zellner)
+  save(mod_zellner,file="stanmodels/hw7q2.rda",compress="xz")
+}
+load(file = "stanmodels/hw7q2.rda")
+sink("NULL"); #keep from getting tons of output at once
+fit_zellner = sampling(mod_zellner,data=stan_dat,iter=100000,chains=4,
+                       warmup = 50000,show_messages = FALSE);
+sink(); #go back to printing
+
+#Summarize
+summary(fit_zellner,pars=c("beta","sigs"))$summary
+stan_dens(fit_zellner,par=c("beta","sigs"),separate_chains=TRUE)
+stan_trace(fit_zellner) + xlim(9.99e+04,1e+05)
+stan_ac(fit_zellner)
+posterior = as.array(fit_zellner)
+#mcmc_intervals(posterior) #this one doesn't plot correctly
+samples = extract(fit_zellner)
+ncycles = length(samples$sigs)
+yrep = matrix(0,ncol=nrow(bank_salary),nrow=ncycles)
+for(i in seq_len(nrow(bank_salary))){
+  mui = {mean(samples$beta[,1]) + mean(samples$beta[,2])*bank_salary$male[i] + 
+    mean(samples$beta[,3])*bank_salary$education[i] + 
+    mean(samples$beta[,4])*bank_salary$experience[i] + 
+    mean(samples$beta[,5])*bank_salary$time[i]
+  }
+  yrep[,i] = rnorm(ncycles,mean=mui,sd=samples$sigs^(1./2))
+}
+ppc_hist(bank_salary$bsalary,yrep[sample(1:ncycles,8),])
+```
+
+**Problem 3:**
+```{r}
+#Format data for stan
+stan_dat = list(n = n, V=solve(crossprod(X)), csq = 100^2, mu0 = c(0,0,0,0,0), 
+                bsal = bank_salary$bsalary, X = X, v = v)
 
 if (!file.exists("stanmodels/hw7q2.rda")){ #Generate the model if it is missing.
   mod_zellner = stan_model(model_code = stanmod_zellner)
