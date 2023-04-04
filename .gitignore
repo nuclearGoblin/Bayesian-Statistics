@@ -275,6 +275,11 @@ TSWLatexianTemp*
 # Makeindex log files
 *.lpz
 
-# RMarkdown Preview
+# RStudio Files
 *.nb.html
 *.pdf
+.RData
+.Rhistory
+
+# Null
+NULL
