@@ -79,10 +79,26 @@ the precision $\tau$ (or an Inv-Gamma(0.01, 0.01) prior distribution for the dat
 ### Problem 4. 
 #### Compare the posterior distributions for $R_b^2$ for all three models (with proper labeling) in a single plot. Which models appears to have the best fit? 
 
-
+```{r}
+fits = rbind(cbind(subset(as.data.frame(fit),select='Rbsq'),
+                   model = "Independent Normal"),
+             cbind(subset(as.data.frame(fit_zellner),select='Rbsq'),
+                   model = "G-Prior, c^2= n"),
+             cbind(subset(as.data.frame(fit_100sq),select='Rbsq'),
+                   model = "G-Prior, c^2 = 100^2"))
+ggplot(fits, aes(x = Rbsq)) + theme_bw() +
+  geom_density(aes(fill = model), alpha = 0.4)
+```
 
 ### Problem 5. 
 #### Provide a point estimate (using the posterior means) of the regression equation for Model 1. Interpret each of the regression coefficients for Model 1 in the context of the problem.
+
+Using the means from the independent normal model, we would expect a person's salary to follow this formula:
+
+$$
+S = 3.5 + 0.72I_m + 0.090E_Y + 0.0012X_M + 0.023T_M
+$$
+The average starting pay on January 1, 1969 for a woman with no experience or education was \$3,500.
 
 # Appendix
 
@@ -106,6 +122,7 @@ data {
   vector[n]     educ; //covariate
   vector[n]     xp;   //covariate
   vector[n]     time; //covariate
+  real<lower=0> v;    //sample variance
 }
 parameters{
   real<lower=0> sigs; //variance
@@ -181,6 +198,7 @@ data {
   matrix[n,5]   X;    //covariates
   vector[5]     mu0;  //starting means for covariants
   cov_matrix[5] V;    //covariance matrix
+  real<lower=0> v;    //sample variance
 }
 parameters{
   real<lower=0> sigs; //variance
@@ -249,18 +267,18 @@ if (!file.exists("stanmodels/hw7q2.rda")){ #Generate the model if it is missing.
 }
 load(file = "stanmodels/hw7q2.rda")
 sink("NULL"); #keep from getting tons of output at once
-fit_zellner = sampling(mod_zellner,data=stan_dat,iter=100000,chains=4,
+fit_100sq = sampling(mod_zellner,data=stan_dat,iter=100000,chains=4,
                        warmup = 50000,show_messages = FALSE);
 sink(); #go back to printing
 
 #Summarize
-summary(fit_zellner,pars=c("beta","sigs"))$summary
-stan_dens(fit_zellner,par=c("beta","sigs"),separate_chains=TRUE)
-stan_trace(fit_zellner) + xlim(9.99e+04,1e+05)
-stan_ac(fit_zellner)
-posterior = as.array(fit_zellner)
+summary(fit_100sq,pars=c("beta","sigs"))$summary
+stan_dens(fit_100sq,par=c("beta","sigs"),separate_chains=TRUE)
+stan_trace(fit_100sq) + xlim(9.99e+04,1e+05)
+stan_ac(fit_100sq)
+posterior = as.array(fit_100sq)
 #mcmc_intervals(posterior) #this one doesn't plot correctly
-samples = extract(fit_zellner)
+samples = extract(fit_100sq)
 ncycles = length(samples$sigs)
 yrep = matrix(0,ncol=nrow(bank_salary),nrow=ncycles)
 for(i in seq_len(nrow(bank_salary))){
