@@ -7,6 +7,123 @@ output:
       in_header: "input/preamble.tex"
 ---
 
+```{r include=FALSE}
+#imports
+library(rstan); library(bayesutils); library(coda); 
+library(ggplot2); library(bayesplot); 
+
+#for use later
+n = length(bank_salary$bsalary) #numentries
+v = var(bank_salary$bsalary)    #sample variance
+
+#stan
+stanmod = "
+data {
+  int<lower=1>  n;    //num obs
+  vector[n]     bsal; //main data
+  vector[n]     male; //covariate
+  vector[n]     educ; //covariate
+  vector[n]     xp;   //covariate
+  vector[n]     time; //covariate
+  real<lower=0> v;    //sample variance
+}
+parameters{
+  real<lower=0> sigs; //variance
+  real          bet0; //regression coefficients vvv
+  real          bet1;
+  real          bet2;
+  real          bet3;
+  real          bet4;
+}
+model{
+  //static priors* used by all models
+  sigs ~ inv_gamma(0.01,0.01);//variance
+  for(i in 1:n){              //data distribution
+    bsal[i] ~ normal(bet0 + bet1*male[i] + bet2*educ[i] + bet3*xp[i] + bet4*time[i],sigs^(1./2));
+  }
+  
+  //priors for regression coefficients; these change each time
+  bet0 ~ normal(0,sqrt(1002)); 
+  bet1 ~ normal(0,sqrt(1002));
+  bet2 ~ normal(0,sqrt(1002));
+  bet3 ~ normal(0,sqrt(1002));
+  bet4 ~ normal(0,sqrt(1002));
+}
+generated quantities {
+  real Rbsq;
+  Rbsq = 1 - sigs / v;
+}"
+
+#Format data for stan
+stan_dat = list(n = n, v = v, bsal = bank_salary$bsalary,
+                male = bank_salary$male, educ = bank_salary$education, 
+                xp = bank_salary$experience, time = bank_salary$time)
+
+if (!file.exists("stanmodels/hw7q1.rda")){ #Generate the model if it is missing.
+  mod = stan_model(model_code = stanmod)
+  save(mod,file="stanmodels/hw7q1.rda",compress="xz")
+}
+load(file = "stanmodels/hw7q1.rda")
+fit = sampling(mod,data=stan_dat,iter=100000,chains=4,warmup = 50000,
+               show_messages = FALSE);
+
+X = cbind(1, bank_salary$male, bank_salary$education, bank_salary$experience, 
+          bank_salary$time)
+stanmod_zellner = "
+data {
+  int<lower=1>  n;    //num obs
+  vector[n]     bsal; //main data
+  real<lower=0> csq;  //zellner's g-prior var
+  matrix[n,5]   X;    //covariates
+  vector[5]     mu0;  //starting means for covariants
+  cov_matrix[5] V;    //covariance matrix
+  real<lower=0> v;    //sample variance
+}
+parameters{
+  real<lower=0> sigs; //variance
+  vector[5]     beta; //regression coefficients
+}
+transformed parameters{
+  vector[n]     mu;   //means of responses
+  mu = X * beta;
+}
+model{
+  sigs ~ inv_gamma(0.01,0.01);         //variance
+  beta ~ multi_normal(mu0,sigs*csq*V);
+  for(i in 1:n){
+    bsal[i] ~ normal(mu[i],sqrt(sigs));
+  }
+}
+generated quantities {
+  real Rbsq;
+  Rbsq = 1 - sigs / v;
+}"
+
+#Format data for stan
+stan_dat = list(n = n, v = v, V=solve(crossprod(X)), csq = n, X = X,
+                mu0 = c(0,0,0,0,0), bsal = bank_salary$bsalary)
+
+if (!file.exists("stanmodels/hw7q2.rda")){ #Generate the model if it is missing.
+  mod_zellner = stan_model(model_code = stanmod_zellner)
+  save(mod_zellner,file="stanmodels/hw7q2.rda",compress="xz")
+}
+load(file = "stanmodels/hw7q2.rda")
+fit_zellner = sampling(mod_zellner,data=stan_dat,iter=100000,chains=4,
+                       warmup = 50000,show_messages = FALSE);
+
+#Format data for stan
+stan_dat = list(n = n, V=solve(crossprod(X)), csq = 100^2, mu0 = c(0,0,0,0,0), 
+                bsal = bank_salary$bsalary, X = X, v = v)
+
+if (!file.exists("stanmodels/hw7q2.rda")){ #Generate the model if it is missing.
+  mod_zellner = stan_model(model_code = stanmod_zellner)
+  save(mod_zellner,file="stanmodels/hw7q2.rda",compress="xz")
+}
+load(file = "stanmodels/hw7q2.rda")
+fit_100sq = sampling(mod_zellner,data=stan_dat,iter=100000,chains=4,
+                       warmup = 50000,show_messages = FALSE);
+```
+
 All the questions below require you to use R and/or Stan to approximate the posterior distribution(s) of interest. I assume that you will do things like run multiple chains, calculate the Gelman-Rubin statistic, check the ACF of draws from the MCMC chain, determine the effective sample size, etc. However, I will only be looking at the posterior results. Make sure to include the R/Stan code used to run each model as an appendix so that I can check your work. I recommend a warmup of 50,000 iterations and 50,000 saved values for each parameter using 4 chains. \break
 Ramsey and Schafer (2013) provide data related to bank employee salary for entrylevel clerical employees hired by the Harris Trust and Savings Bank between 1969 and 1977. Let the response variable be beginning salary (bsalary) in thousands of
 dollars. Along with the intercept, there are four covariates:
@@ -37,7 +154,7 @@ the precision $\tau$ (or an Inv-Gamma(0.01, 0.01) prior distribution for the dat
 +----------+-----------+------------+------------+-----------+
 |$\sigma^2$|0.263632159|0.0405537853|1.956672e-01|0.033697268|
 +----------+-----------+------------+------------+-----------+
-
+\newpage
 ### Problem 2.
 #### Model 2: Use the default Zellner’s g-prior for $\beta$ ($c^2 = n$).  Provide the posterior mean, standard deviation, 0.025, and 0.975 quantiles for all regression coefficients and the variance $\sigma^2$ for all three models in a simple tabular format. 
 
@@ -76,8 +193,11 @@ the precision $\tau$ (or an Inv-Gamma(0.01, 0.01) prior distribution for the dat
 |$\sigma^2$|0.252165684|0.0376167956|0.1888764559|0.3360667|
 +----------+-----------+------------+------------+---------+
 
+\newpage
 ### Problem 4. 
-#### Compare the posterior distributions for $R_b^2$ for all three models (with proper labeling) in a single plot. Which models appears to have the best fit? 
+#### Compare the posterior distributions for $R_b^2$ for all three models (with proper labeling) in a single plot. Which models appears to have the best fit? \break
+
+The independent normal model and the Zellner's g-prior with $c^2 = 100^2$ both appear to be good fits. The g-prior with $c^2 = n$ is not a good fit.
 
 ```{r}
 fits = rbind(cbind(subset(as.data.frame(fit),select='Rbsq'),
@@ -89,16 +209,20 @@ fits = rbind(cbind(subset(as.data.frame(fit),select='Rbsq'),
 ggplot(fits, aes(x = Rbsq)) + theme_bw() +
   geom_density(aes(fill = model), alpha = 0.4)
 ```
+\newpage
 
 ### Problem 5. 
-#### Provide a point estimate (using the posterior means) of the regression equation for Model 1. Interpret each of the regression coefficients for Model 1 in the context of the problem.
+#### Provide a point estimate (using the posterior means) of the regression equation for Model 1. Interpret each of the regression coefficients for Model 1 in the context of the problem. \break
 
 Using the means from the independent normal model, we would expect a person's salary to follow this formula:
 
 $$
 S = 3.5 + 0.72I_m + 0.090E_Y + 0.0012X_M + 0.023T_M
 $$
-The average starting pay on January 1, 1969 for a woman with no experience or education was \$3,500.
+The average starting pay on January 1, 1969 for a woman with no experience or education was \$3,500. On average, men made \$720 more than women in the same position at the same time with equal experience and education. For each year of education, one could expect to earn \$90 more than their peers without an education, and one could expect to earn \$1.20 more for each month of experience. Wages steadily increased by an average of \$23 each month.
+
+The dominating factor differentiating pay between peers in the sample was gender, with men making up to almost 20% more than their female peers and gender equating to eight years of education or 50 years of experience. Education is valued more than experience in wage calculation, with a year of education equating to six years and three months' worth of work experience. Average monthly wage increases are about twenty times those granted for work experience; assuming that wages were adjusted monthly for existing employees, one could expect to see an increase of \$24.20 per month.
+\newpage
 
 # Appendix
 
@@ -185,6 +309,8 @@ for(i in seq_len(nrow(bank_salary))){
 ppc_hist(bank_salary$bsalary,yrep[sample(1:ncycles,8),])
 ```
 
+\newpage
+
 **Problem 2:**
 
 ```{r}
@@ -254,6 +380,8 @@ for(i in seq_len(nrow(bank_salary))){
 }
 ppc_hist(bank_salary$bsalary,yrep[sample(1:ncycles,8),])
 ```
+
+\newpage
 
 **Problem 3:**
 ```{r}
