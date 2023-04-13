@@ -1,0 +1,87 @@
+---
+title: "Project Proposal"
+author: "Kitty Harris"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Provide the the following information for your project.
+
+**1. What research question(s) do you hope to answer?** \break
+How do race, area income and poverty, and language spoken at home affect literacy in elementary students?
+
+**2. From where did you obtain the data you will use to answer your research question?** \break
+Literacy data was obtained from [kidscount.org](https://datacenter.kidscount.org/data/tables/9172-3rd-graders-who-met-or-exceeded-standards-in-english-language-arts-literacy#detailed/2/any/false/1095,1729,37/133,757,107,172,4,217/18184), which obtained the data from the California Department of Education. Data on income, poverty, and language spoken at home was taken from [census data](https://www.census.gov/quickfacts/fact/table/colusacountycalifornia,calaverascountycalifornia,buttecountycalifornia,amadorcountycalifornia,alamedacountycalifornia,CA/INC110221) for each county over the years 2017-2021.
+
+**3. How many observations does your data set have?**\break
+The data has 906 observations.
+
+**4. Are you merging multiple data sets?**\break
+Somewhat; I am merging student scores with census data on median household income for their respective counties, but this does not alter the number of observations.
+
+**5. Provide a table listing each variable you are considering for analysis, briefly describe each variable (e.g., the number of disease cases in each region), and the variable type (e.g., numeric, factor, date, etc.).**\break
+
++-----------+-------+-------------------------------------------------------------------------+
+|Variable   |Type   |Description                                                              |
++===========+=======+=========================================================================+
+|Pass       |Numeric|Portion of students in the group who met the English literacy standards. |
++-----------+-------+-------------------------------------------------------------------------+
+|Year       |Date   |Year in which the data was taken.                                        |
++-----------+-------+-------------------------------------------------------------------------+
+|Race       |Factor |Values: Black, Latino, White, Asian (including Filipino, Native Hawaiian,|
+|           |       |and Pacific Islander), Other (including multiracial), or All (for        |
+|           |       |aggregate of all groups).                                                |
++-----------+-------+-------------------------------------------------------------------------+
+|MedIncome\*|Numeric|Local median household income.                                           |
++-----------+-------+-------------------------------------------------------------------------+
+|Poverty\*  |Numeric|Percentage of local population in poverty.                               |
++-----------+-------+-------------------------------------------------------------------------+
+|ESL\*      |Numeric|Percentage of local population where the primary language spoken at home |
+|           |       |is not English.                                                          |
++-----------+-------+-------------------------------------------------------------------------+
+
+\*Variables marked with an asterisk are correlated as they are all determined by county. If no county is listed, census data for the state is used instead.
+
+**6. What will your response variable be for answering the research question(s)?**\break
+The response variable will be `Pass`, the passing rate for students in each group.
+
+\newpage
+
+**7. Provide a numeric summary of your response variable.**\break
+
+```{r}
+library("readxl")
+data = read_excel("input/literacydata.xlsx"); pass = data$"Pass"
+quantile(pass,probs=seq(0,1,1/4))
+print(paste0("Mean: ",mean(pass)))
+print(paste0("Variance: ",var(pass)))
+
+```
+
+**8. Provide a visual summary of your response variable (histogram if discrete, density plot if continuous.)**\break
+
+```{r}
+plot(density(pass),main="Pass Rate Density")
+```
+
+\newpage
+
+**9. Provide an appropriate graphical summary for each predictor variable.**\break
+
+```{r}
+library(dplyr)
+hist(data$Year,main="Data Available by Year")
+rcount = data %>% count(Race)
+barplot(rcount$n,main="Number of Groups of Each Race",names.arg = rcount$Race)
+lcount = data %>% count(Location)
+#barplot(lcount$n,main="Number of Groups in Each County",names.arg = lcount$Location)
+#^too many counties and I'm not going to call that directly in analysis
+
+plot(density(data$`Median Household Income`),main = "Density: Median Household Income")
+plot(density(data$Poverty),main = "Density: Percentage of People in Poverty")
+plot(density(data$ESL),main="Density: Percentage of Non-English-Speaking Household")
+```

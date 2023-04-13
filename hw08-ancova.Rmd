@@ -1,0 +1,80 @@
+---
+title: "Hw08- Categorical Predictors"
+subtitle: Math 7393 Bayesian Statistics
+output:
+  pdf_document: default
+---
+
+All of the questions below require you to use R and/or Stan to approximate the posterior distribution(s) of interest.  I assume that you will do things like run multiple chains, calculate the Gelman-Rubin statistic, check the ACF of draws from the MCMC chain, determine the effective sample size, etc.  However, I will only be looking at the posterior results.  I recommend a warmup of 50,000 iterations and 50,000 saved values for each parameter using 4 chains. Please include your Stan model code as an appendix that I can look at if necessary, but not in the actual questions. One way to do this in R Markdown/Quarto is to set the `include` or `echo` option of the code chunk to `FALSE`/`false` so that it runs but is not included in the output. Then manually paste the relevant code to an appendix between two sets of 3 back ticks like you are starting and concluding a code chunk, but don't include the `{r}` part in the starting part.
+
+**Hawks data**
+
+Load the `Hawks` data set from the **Stat2Data** package. The data are a sample of 908 hawks from three different species. More details can be found by running `?Stat2Data::Hawks`. The variables in the data set include:
+
+- `Species`:	`CH`=Cooper's, `RT`=Red-tailed, `SS`=Sharp-Shinned.
+- `Wing`: length (mm) of primary wing feather from tip to wrist it attaches to.
+- `Weight`:	body weight (g).
+
+Run the following commands to load this data set and remove any `NA` values.
+
+```{r}
+data(Hawks, package = "Stat2Data")
+Hawks <- na.omit(Hawks[,c("Species", "Wing", "Weight")])
+```
+
+We will fit four different regression models to the data using `Wing` as the response variable and the other variables as explanatory variables.
+
+*Data distribution*
+
+$y_i \mid \mu_i, \sigma^2 \sim N(\mu_i, \sigma^2)$ with $y_1, y_2, \ldots, y_n$ being independent and $\mu_i$ is based on the appropriate regression model (like in class).
+
+*Prior distributions*
+
+$\sigma^2 \sim$ Inv-Gamma(0.01, 0.01).
+All regression coefficients are assumed to be independent and have a $N(0,100^2)$ prior distribution.
+
+Model 1: A one-way ANOVA using `species` as the categorical predictor and "CH" as the reference level.
+Model 2: A simple linear regression model using `Weight` as the predictor.
+Model 3: A parallel lines (main effects) model using `Weight` as the quantitative predictor and `species` as the categorical predictor with "CH" as the reference level.
+Model 4: A separate lines (interaction) model using `Weight` as the quantitative predictor and `species` as the categorical predictor with "CH" as the reference level.
+
+# Problem 1 
+
+Create a scatter plot of the data using `Wing` as the y variable, `Weight` as the x variable, and distinguishing between the `species` using appropriate symbols/colors.  Include the appropriate legend. Do you notice a relationship between the three variables?
+
+# Problem 2
+
+Fit a one-way ANOVA model (Model 1) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+# Problem 3
+
+Provide a point estimate (using the posterior means) of the regression equation for the one-way ANOVA model (Model 1). Interpret each coefficient in the context of the problem.
+
+# Problem 4
+
+Fit a simple linear regression model (Model 2) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+# Problem 5
+
+Provide a point estimate (using the posterior means) of the regression equation for the simple linear regression model (Model 2). Interpret each coefficient in the context of the problem.
+
+
+# Problem 6
+
+Fit a parallel lines regression model (Model 3) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+# Problem 7
+
+Provide a point estimate (using the posterior means) of the regression equation for the parallel lines regression model (Model 3). Interpret each coefficient related to the `CH` and `RT` species in the context of the problem.
+
+# Problem 8
+
+Fit a separate lines regression model (Model 4) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+# Problem 9
+
+Provide a point estimate (using the posterior means) of the regression equation for the parallel lines regression model (Model 4). Interpret each coefficient related to the `CH` and `RT` species in the context of the problem.
+
+# Problem 10
+
+Compute the WAIC and LOOIC of each the 4 models, summarizing your results in a simple table.  Which model do you think is most appropriate?  Why? 
