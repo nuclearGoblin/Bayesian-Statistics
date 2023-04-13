@@ -42,10 +42,75 @@ Model 4: A separate lines (interaction) model using `Weight` as the quantitative
 
 Create a scatter plot of the data using `Wing` as the y variable, `Weight` as the x variable, and distinguishing between the `species` using appropriate symbols/colors.  Include the appropriate legend. Do you notice a relationship between the three variables?
 
+```{r}
+CH = Hawks[which(Hawks$Species == "CH"), ]
+RT = Hawks[which(Hawks$Species == "RT"), ]
+SS = Hawks[which(Hawks$Species == "SS"), ]
+plot(Hawks$Weight,Hawks$Wing,xlab="Weight (gm)",ylab="Wingspan (mm)") #Get axes right
+points(CH$Weight,CH$Wing,col='blue')
+points(RT$Weight,RT$Wing,col='red')
+points(SS$Weight,SS$Wing,col='green')
+
+legend(1500,200,c("Cooper's","Red-Tailed","Sharp-Shinned"),col=c('blue','red','green'),pch='o')
+```
+
+There is a positive relationship between weight and wingspan. Species limits the range of wingspans to an extent, although there are definite outliers. The Sharp-Shinned hawks are the smallest of the three species while the Red-Tailed are the largest. There also appear to be two possibly distinct size groups within the Cooper's and Sharp-Shinned hawk populations.
+
 # Problem 2
 
 Fit a one-way ANOVA model (Model 1) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
 
+```{r include=FALSE}
+library(rstan); library(dplyr)
+anova = "
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  vector[n]    IR;      //indicator for Red-Tailed
+  vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  real          alpha1; //response for red-tailed
+  real          alpha2; //response for sharp-shinned
+}
+transformed parameters{
+  vector[n]     mu;     //mean of responses
+  mu = beta0 + beta1*Weight + alpha1*IR + alpha2*IS;
+}
+model{
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  alpha1 ~ normal(0,100);
+  alpha2 ~ normal(0,100);
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  real log_ll[n]; //log likelihood PER observation:
+  for (i in 1:n) log_ll[i] = normal_lpdf(Wing[i] | mu[i], sqrt(sigs));
+}
+"
+
+if (!file.exists("stanmodels/hw8anova.rda")){
+  anova_mod = stan_model(model_code = anova)
+  save(anova_mod,file = "stanmodels/hw8anova.rda",compress="xz")
+}
+load("stanmodels/hw8anova.rda")
+dat = list(n = length(Hawks$Wing),v = var(Hawks$Wing),
+           Wing = Hawks$Wing, Weight = Hawks$Weight,
+           IR= as.integer(Hawks$Species == "RT"),
+           IS= as.integer(Hawks$Species == "SS"))
+fit_anova = sampling(anova_mod,data=dat,iter=100000,chains=4,cores=4)
+summary(fit_anova,"Rbsq",use_cache=FALSE)
+```
 # Problem 3
 
 Provide a point estimate (using the posterior means) of the regression equation for the one-way ANOVA model (Model 1). Interpret each coefficient in the context of the problem.
@@ -78,3 +143,12 @@ Provide a point estimate (using the posterior means) of the regression equation 
 # Problem 10
 
 Compute the WAIC and LOOIC of each the 4 models, summarizing your results in a simple table.  Which model do you think is most appropriate?  Why? 
+
+\newpage
+
+# Appendix
+
+##Problem 2
+```
+
+```
