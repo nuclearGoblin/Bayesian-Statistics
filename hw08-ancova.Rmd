@@ -66,7 +66,7 @@ anova = "
 data{
   int<lower=1> n;       //num observations
   vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
-  vector[n]    Weight;  //weights
+  //vector[n]    Weight;  //weights
   vector[n]    IR;      //indicator for Red-Tailed
   vector[n]    IS;      //indicator for Sharp-Shinned
   real<lower=0> v;      //sample variance of wingspans
@@ -74,28 +74,27 @@ data{
 parameters{
   real<lower=0> sigs;   //sigma squared
   real          beta0;  //baseline
-  real          beta1;  //response by weight
+  //real          beta1;  //response by weight
   real          alpha1; //response for red-tailed
   real          alpha2; //response for sharp-shinned
 }
-transformed parameters{
-  vector[n]     mu;     //mean of responses
-  mu = beta0 + beta1*Weight + alpha1*IR + alpha2*IS;
-}
 model{
+  vector[n]     mu;     //mean of responses
+
   //priors:
   sigs   ~ inv_gamma(0.01,0.01);
   beta0  ~ normal(0,100);
-  beta1  ~ normal(0,100);
+  //beta1  ~ normal(0,100);
   alpha1 ~ normal(0,100);
   alpha2 ~ normal(0,100);
+  
+  mu = beta0 + alpha1*IR + alpha2*IS;
+  //data dist
+  for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
 }
 generated quantities{
   real Rbsq;
   Rbsq = 1 - sigs/v;
-  
-  real log_ll[n]; //log likelihood PER observation:
-  for (i in 1:n) log_ll[i] = normal_lpdf(Wing[i] | mu[i], sqrt(sigs));
 }
 "
 
@@ -105,15 +104,33 @@ if (!file.exists("stanmodels/hw8anova.rda")){
 }
 load("stanmodels/hw8anova.rda")
 dat = list(n = length(Hawks$Wing),v = var(Hawks$Wing),
-           Wing = Hawks$Wing, Weight = Hawks$Weight,
+           Wing = Hawks$Wing, #Weight = Hawks$Weight,
            IR= as.integer(Hawks$Species == "RT"),
            IS= as.integer(Hawks$Species == "SS"))
-fit_anova = sampling(anova_mod,data=dat,iter=100000,chains=4,cores=4)
-summary(fit_anova,"Rbsq",use_cache=FALSE)
+fit_anova = sampling(anova_mod,data=dat,iter=50000,chains=4,cores=4)
+summary(fit_anova,c("beta0","alpha1","alpha2","Rbsq","sigs"),use_cache=FALSE)$summary
 ```
+
++----------+-----+-----+-----+
+|Parameter |0.025|mean |0.975|
++==========+=====+=====+=====+
+|$\beta_0$ |237  |244  |251  |
++----------+-----+-----+-----+
+|$\alpha_1$|132  |140. |147  |
++----------+-----+-----+-----+
+|$\alpha_2$|-66.7|-59.1|-51.4|
++----------+-----+-----+-----+
+|$\sigma^2$|770. |845  |927  |
++----------+-----+-----+-----+
+
 # Problem 3
 
 Provide a point estimate (using the posterior means) of the regression equation for the one-way ANOVA model (Model 1). Interpret each coefficient in the context of the problem.
+
+Using the means, a point estimate for the regression equation of the wingspan, in mm, would be:
+
+$$ Wingspan = 244 + 132I_{Red-Tailed} - 59.1I_{Sharp-Shinned} $$
+Interpretation: The average wingspan for a Cooper's hawk is 244 mm, while the average wingspan for a Red-Tailed hawk is 132 mm more and that of a Sharp-Shinned hawk is 59.1 mm less.
 
 # Problem 4
 
@@ -148,7 +165,7 @@ Compute the WAIC and LOOIC of each the 4 models, summarizing your results in a s
 
 # Appendix
 
-##Problem 2
+##ANOVA
 ```
 
 ```
