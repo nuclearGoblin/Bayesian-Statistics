@@ -61,7 +61,7 @@ There is a positive relationship between weight and wingspan. Species limits the
 Fit a one-way ANOVA model (Model 1) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
 
 ```{r include=FALSE}
-library(rstan); library(dplyr)
+library(rstan);
 anova = "
 data{
   int<lower=1> n;       //num observations
@@ -95,6 +95,9 @@ model{
 generated quantities{
   real Rbsq;
   Rbsq = 1 - sigs/v;
+  
+  vector[n] ll; //log likelihood
+  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
 }
 "
 
@@ -129,43 +132,282 @@ Provide a point estimate (using the posterior means) of the regression equation 
 
 Using the means, a point estimate for the regression equation of the wingspan, in mm, would be:
 
-$$ Wingspan = 244 + 132I_{Red-Tailed} - 59.1I_{Sharp-Shinned} $$
-Interpretation: The average wingspan for a Cooper's hawk is 244 mm, while the average wingspan for a Red-Tailed hawk is 132 mm more and that of a Sharp-Shinned hawk is 59.1 mm less.
+$$ \mathrm{Wingspan} = 244 + 140I_{\mathrm{Red-Tailed}} - 59.1I_{\mathrm{Sharp-Shinned}} $$
+Interpretation: The average wingspan for a Cooper's hawk is 244 mm, while the average wingspan for a Red-Tailed hawk is 140 mm more and that of a Sharp-Shinned hawk is 59.1 mm less.
 
 # Problem 4
 
 Fit a simple linear regression model (Model 2) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
 
+```{r include=FALSE}
+library(rstan)
+linear = "
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  //vector[n]    IR;      //indicator for Red-Tailed
+  //vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  //real          alpha1; //response for red-tailed
+  //real          alpha2; //response for sharp-shinned
+}
+model{
+  vector[n]     mu;     //mean of responses
+
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  //alpha1 ~ normal(0,100);
+  //alpha2 ~ normal(0,100);
+  
+  mu = beta0 + beta1*Weight;
+  //data dist
+  for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  vector[n] ll; //log likelihood
+  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
+"
+
+if (!file.exists("stanmodels/hw8linear.rda")){
+  linear_mod = stan_model(model_code = linear)
+  save(linear_mod,file = "stanmodels/hw8linear.rda",compress="xz")
+}
+load("stanmodels/hw8anova.rda")
+dat = list(n = length(Hawks$Wing),v = var(Hawks$Wing),
+           Wing = Hawks$Wing, Weight = Hawks$Weight#,
+           #IR= as.integer(Hawks$Species == "RT"),
+           #IS= as.integer(Hawks$Species == "SS")
+           )
+fit_linear = sampling(linear_mod,data=dat,iter=50000,chains=4,cores=4)
+summary(fit_linear,c("beta0","beta1","Rbsq","sigs"),use_cache=FALSE)$summary
+```
+
++----------+-----+-----+-----+
+|Parameter |0.025|mean |0.975|
++==========+=====+=====+=====+
+|$\beta_0$ |163  |167  |171  |
++----------+-----+-----+-----+
+|$\beta_1$ |0.188|0.193|0.197|
++----------+-----+-----+-----+
+|$\sigma^2$|1046 |1147 |1258 |
++----------+-----+-----+-----+
+
 # Problem 5
 
 Provide a point estimate (using the posterior means) of the regression equation for the simple linear regression model (Model 2). Interpret each coefficient in the context of the problem.
+
+Using the means, a point estimate for the regression equation of the wingspan, in mm, would be:
+
+$$ \mathrm{Wingspan} = 167 + 0.193\mathrm{Weight}$$,
+
+where weight is given in gm.
+
+Interpretation: Each gram of weight corresponds to, on average, a 0.193 mm increase in wingspan. There is an additional offset of 167 mm. For example, the wingspan of a "weightless" hawk (if hawks could be weightless) would be 167 mm, and the wingspan of a hawk weighing 1000 gm would be 360 mm.
 
 
 # Problem 6
 
 Fit a parallel lines regression model (Model 3) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
 
+```{r include=FALSE}
+library(rstan); library(dplyr)
+parallel = "
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  vector[n]    IR;      //indicator for Red-Tailed
+  vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  real          alpha1; //response for red-tailed
+  real          alpha2; //response for sharp-shinned
+}
+model{
+  vector[n]     mu;     //mean of responses
+
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  alpha1 ~ normal(0,100);
+  alpha2 ~ normal(0,100);
+  
+  mu = beta0 + beta1*Weight + alpha1*IR + alpha2*IS;
+  //data dist
+  for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  vector[n] ll; //log likelihood
+  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
+"
+
+if (!file.exists("stanmodels/hw8parallel.rda")){
+  parallel_mod = stan_model(model_code = parallel)
+  save(parallel_mod,file = "stanmodels/hw8parallel.rda",compress="xz")
+}
+load("stanmodels/hw8parallel.rda")
+dat = list(n = length(Hawks$Wing),v = var(Hawks$Wing),
+           Wing = Hawks$Wing, Weight = Hawks$Weight,
+           IR= as.integer(Hawks$Species == "RT"),
+           IS= as.integer(Hawks$Species == "SS"))
+fit_parallel = sampling(parallel_mod,data=dat,iter=50000,chains=4,cores=4)
+summary(fit_parallel,c("beta0","beta1","alpha1","alpha2","Rbsq","sigs"),use_cache=FALSE)$summary
+```
+
++----------+------+------+------+
+|Parameter |0.025 |mean  |0.975 |
++==========+======+======+======+
+|$\beta_0$ |206   |213   |221   |
++----------+------+------+------+
+|$\beta_1$ |0.0620|0.0727|0.0833|
++----------+------+------+------+
+|$\alpha_1$|80.9  |90.6  |100.  |
++----------+------+------+------+
+|$\alpha_2$|-47.0 |-39.4 |-31.8 |
++----------+------+------+------+
+|$\sigma^2$|644   |706   |774   |
++----------+------+------+------+
+
 # Problem 7
 
 Provide a point estimate (using the posterior means) of the regression equation for the parallel lines regression model (Model 3). Interpret each coefficient related to the `CH` and `RT` species in the context of the problem.
+
+Using the means, a point estimate for the regression equation of the wingspan, in mm, would be:
+
+$$ \mathrm{Wingspan} = 213 + 0.0727\mathrm{Weight} + 90.6I_{\mathrm{Red-Tailed}} - 39.4I_{\mathrm{Sharp-Shinned}}$$
+Interpretation: The base mean wingspan for a Cooper's hawk is 213 mm, while on average a Red-Tailed hawk's wingspan will be 90.6 mm greater and a Sharp-Shinned hawk's wingspan will be 39.4 less. For each additional gram the hawk weighs, we expect to see 0.0727 mm more of wingspan, regardless of the hawk's species.
 
 # Problem 8
 
 Fit a separate lines regression model (Model 4) using Stan. In a simple, tabular format, provide the posterior mean, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
 
+```{r include=FALSE}
+library(rstan)
+separate = "
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  vector[n]    IR;      //indicator for Red-Tailed
+  vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  real          alpha1; //response for red-tailed
+  real          alpha2; //response for sharp-shinned
+  real          delta1; //response by weight for red-tailed
+  real          delta2; //response by weight for sharp-shinned
+}
+model{
+  vector[n]     mu;     //mean of responses
+
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  alpha1 ~ normal(0,100);
+  alpha2 ~ normal(0,100);
+  delta1 ~ normal(0,100);
+  delta2 ~ normal(0,100);
+  
+  //data dist
+  for(i in 1:n){
+    mu[i] = beta0 + beta1*Weight[i] + (alpha1 + delta1*Weight[i])*IR[i] + (alpha2 + delta2*Weight[i])*IS[i];
+    Wing[i] ~ normal(mu[i],sqrt(sigs));
+  }
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  vector[n] ll; //log likelihood
+  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
+"
+
+if (!file.exists("stanmodels/hw8sep.rda")){
+  separate_mod = stan_model(model_code = separate)
+  save(separate_mod,file = "stanmodels/hw8sep.rda",compress="xz")
+}
+load("stanmodels/hw8sep.rda")
+dat = list(n = length(Hawks$Wing),v = var(Hawks$Wing),
+           Wing = Hawks$Wing, Weight = Hawks$Weight,
+           IR= as.integer(Hawks$Species == "RT"),
+           IS= as.integer(Hawks$Species == "SS"))
+fit_separate = sampling(separate_mod,data=dat,iter=50000,chains=4,cores=4)
+summary(fit_separate,c("beta0","beta1","alpha1","alpha2","delta1","delta2","Rbsq","sigs"),use_cache=FALSE)$summary
+```
++----------+-------+-------+-------+
+|Parameter |0.025  |mean   |0.975  |
++==========+=======+=======+=======+
+|$\beta_0$ |181    |198    |214    |
++----------+-------+-------+-------+
+|$\beta_1$ |0.0736 |0.110  |0.147  |
++----------+-------+-------+-------+
+|$\alpha_1$|104    |125    |145    |
++----------+-------+-------+-------+
+|$\alpha_2$|-66.2  |-48.6  |-30.9  |
++----------+-------+-------+-------+
+|$\delta_1$|-0.0926|-0.0541|-0.0161|
++----------+-------+-------+-------+
+|$\delta_2$|0.0777 |0.131  |0.183  |
++----------+-------+-------+-------+
+|$\sigma^2$|587    |665    |707    |
++----------+-------+-------+-------+
+
 # Problem 9
 
 Provide a point estimate (using the posterior means) of the regression equation for the parallel lines regression model (Model 4). Interpret each coefficient related to the `CH` and `RT` species in the context of the problem.
+
+Using the means, a point estimate for the regression equation of the wingspan, in mm, would be:
+
+$$ \mathrm{Wingspan} = 198 + 0.11\mathrm{Weight} + (125 - 0.0541\mathrm{Weight})I_{\mathrm{Red-Tailed}} + (-48.6 + 0.131\mathrm{Weight})I_{\mathrm{Sharp-Shinned}} $$
+
+Interpretation for Cooper's and Red-Tailed: The base wingspan, before accounting for weight, of a Cooper's hawk is 198 mm, and the Red-Tailed hawk's is 125 mm more (323 mm) before accounting for weight. For each gram of weight, the Cooper's hawk's wingspan increases by 0.11 mm, while the Red-Tailed hawk's increases by 0.0541 less (for a net of 0.559 mm/gm), or roughly have as much. Therefore, while the Red-Tailed hawks are generally larger than the Cooper's hawks, the Cooper's hawks' weights more strongly drive their wingspans than the Red-Tailed hawks'.
 
 # Problem 10
 
 Compute the WAIC and LOOIC of each the 4 models, summarizing your results in a simple table.  Which model do you think is most appropriate?  Why? 
 
+```{r}
+print("ANOVA")
+WAIC(fit_anova$ll) #WAIC(ll) for n records, s samples
+looic(mod_anova)#looic(mod) for a bayesian regression model; built on stan
+
+print("Linear"); WAIC(fit_linear$ll); looic(mod_linear)
+print("Parallel"); WAIC(fit_parallel$ll); looic(mod_parallel)
+print("Separate"); WAIC(fit_separate$ll); looic(mod_separate)
+```
+
 \newpage
 
 # Appendix
 
-##ANOVA
+**ANOVA**
 ```
 
 ```
