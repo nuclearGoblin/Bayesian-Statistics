@@ -1,0 +1,534 @@
+---
+title: Exam 2
+subtitle: Math 7393 Bayesian Statistics
+output: pdf_document
+---
+
+```{r, include = FALSE}
+options(digits= 5, scipen = 2)
+```
+
+This exam is open-book and open-note and open-anything with the exception that no other human or Artificial Intelligence may help you on the exam. 
+
+Your answers must be typed in a word processor like Word or LaTeX.  R code and output for individual problem parts should be include in the relevant section.
+
+Each problem is worth 10 points and will be graded according the the rubric provided in Canvas. Make sure to provide enough information that I can evaluate whether you adequately understand what the problem is asking and what the correct response should be. You can reference work from previous problems if it is relevant. Yes/No type answers will not receive any points. 
+
+By signing the below statement, you are verifying that you have followed the rules of the exam.  Unsigned exams will be scored as a zero.  Failing to abide by the rules of the exam will result in a zero score for the entire exam.
+
+I have fully followed the rules and stipulations of this exam:
+
+Name: Kitty Harris
+
+Signature: KCH
+
+Date: 04/22/23
+ 
+\newpage
+
+We will use the famous (Fisher's or Anderson's) `iris` data set for Problems 1-9. The `iris` data set in the **datasets** package gives the measurements in centimeters of the variables sepal length and width and petal length and width, respectively, for 50 flowers from each of 3 species of iris. The species are *Iris setosa*, *versicolor*, and *virginica*. `iris` is a data frame with 150 cases (rows) and 5 variables (columns) named `Sepal.Length`, `Sepal.Width`, `Petal.Length`, `Petal.Width`, and `Species`.
+
+Load the data set and convert the `Species` variable to a `factor`.
+
+```{r}
+library(datasets)
+data = iris #prevent accidental overwriting if the lib reloads
+data$Species = as.factor(data$Species)
+```
+
+\newpage
+
+# Problem 1
+
+Create a grouped scatter plot of `Petal.Width` (y) versus `Petal.Length` (x) that distinguishes the points with respect to the iris `Species`. Comment on the pattern you observe.
+
+**Solution**
+
+```{r}
+#force correct dimensions by starting with all data
+par(mar = c(4,4,0.1,0.1))
+plot(data$Petal.Length,data$Petal.Width,
+     xlab="Petal Length (cm)",ylab = "Petal Width (cm)")
+
+set = data[which(data$Species == "setosa"), ]
+ver = data[which(data$Species == "versicolor"), ]
+vir = data[which(data$Species == "virginica"), ]
+
+points(set$Petal.Length,set$Petal.Width,col='red')
+points(ver$Petal.Length,ver$Petal.Width,col='blue')
+points(vir$Petal.Length,vir$Petal.Width,col='green')
+
+legend(5.8,0.9,c("Setosa","Versicolor","Virginica"),col=c('blue','red','green'),pch='o')
+```
+There appears to be a linear relationship between the petal's width and its length. There is also a relationship between the species and the size of the petal; Virginica irises tend to be the largest, while Versicolor irises are the smallest.
+
+\newpage
+
+# Problem 2
+
+In this problem you will implement a Gibbs sampler for a normal error linear regression model.
+
+**General context**
+
+Let $y$ be the vector of observed data.
+
+Consider the regression model 
+
+$$
+y \mid X, \beta, \sigma^2 \sim N(X\beta, \sigma^2 I)
+$$
+
+with priors
+
+$$\beta\sim N(\boldsymbol{\mu}_{\beta},V_{\beta})$$
+and
+
+$$\sigma^2 \sim \text{Inv-Gamma}(a, b).$$
+
+Then
+
+$$\beta \mid \sigma^2, y\sim N(D_{\beta}d_{\beta},D_{\beta})$$
+
+with 
+
+$$D_{\beta} = (X^TX/\sigma^2 + V_{\beta}^{-1})^{-1}$$
+
+and
+
+$$d_{\beta} = X^T y/\sigma^2 + V_{\beta}^{-1} \boldsymbol{\mu}_{\beta}.$$
+
+$$\sigma^2 \mid \beta, y \sim \text{Inv-Gamma}\biggl(\frac{n}{2}+a, b + \frac{1}{2}(y-X\beta)^T(y-X\beta)\biggr).$$
+
+**Specific context**
+
+Implement a Gibbs sampler for a one-way ANOVA model relating `Petal.Width` to `Species`. Run at least 2 chains with 10,000 warmup iterations and 10,000 retained iterations. 
+
+*Data distribution*
+
+$\mathtt{Petal.Width}_i \mid \boldsymbol{\beta}, \sigma^2 \stackrel{indep.}{\sim} N(\mu_i, \sigma^2)$ for $i=1,2,\ldots,n$ with 
+
+$$
+\mu_i=\beta_0 + \beta_1 D_{i,ve} + \beta_2 D_{i,vi},
+$$
+where $D_{ve}$ is the indicator variable for the `versicolor` species and $D_{vi}$ is the indicator variable for the `virginica` species.
+
+*Prior distributions*
+
+$\beta_0,\beta_1, \beta_2 \stackrel{i.i.d.}{\sim} N(0, 10^2)$.
+
+$\sigma^2 \sim \text{Inv-Gamma}(0.01, 0.01)$.
+
+In a simple, tabular format, provide the posterior mean, the posterior standard deviation, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+**Solution**
+
+```{r}
+library(bayesutils); library(MASS); library(coda)
+
+mu = 0; V = 10^2*diag(3); a = 0.01; b = 0.01 #Prior parameters
+n = length(data$Petal.Width) #data length
+#Set up indicators to save computation time
+data$D0 = matrix(1,n) #placeholder
+data$Dve = as.integer(data$Species == "versicolor")
+data$Dvi = as.integer(data$Species == "virginica")
+#Data interpretation
+X = as.matrix(subset(data,select=c("D0","Dve","Dvi"))); XT = t(X)
+y = data$Petal.Width
+#Variables
+Dbet = function(sigs){(XT%*%X/sigs + V^(-1))^(-1)}
+dbet = function(sigs){XT%*%y/sigs} #mu_beta vector is all 0s.
+
+#Sampling function
+gibbs <- function(B){
+  theta_sims = matrix(0,nrow=B+1,ncol=4)
+  s = 1 #needs to be defined for 1st iteration
+  theta_sims[1,] = c(0,0,0,s) #using starting values from prior means
+  for (i in 2:(B+1)){
+    bet = rmvnorm(1,Dbet(s)%*%dbet(s),Dbet(s));
+    s = rinvgamma(1,n/2+a,b+1/2*t(y-X%*%bet) %*% (y-X%*%bet))
+    theta_sims[i,] = c(bet,s)
+    #print(theta_sims[i,])#debug
+  }
+  return(theta_sims)
+}
+
+#Sample & Report
+chain1 = gibbs(20000)[10001:20000,]; chain2 = gibbs(20000)[10001:20000,]
+mc = mcmc.list(mcmc(chain1),mcmc(chain2))
+#summary(mc) #commented out to provide tabular format below
+```
+
++----------+------+-----+-----+-------+
+|Variable  |0.025 |Mean |0.975|Std Dev|
++==========+======+=====+=====+=======+
+|$\beta_0$ |1.0102|1.199|1.389|0.09568|
++----------+------+-----+-----+-------+
+|$\beta_1$ |1.0023|1.324|1.648|0.16366|
++----------+------+-----+-----+-------+
+|$\beta_2$ |1.7021|2.025|2.347|0.16338|
++----------+------+-----+-----+-------+
+|$\sigma^2$|0.7915|1.317|2.076|0.32793|
++----------+------+-----+-----+-------+
+
+\newpage
+
+# Problem 3
+
+Assess whether your MCMC chains in Problem 1 have converged using trace plots, the effective sample size, and the Heidelberg-Welch diagnostic.
+
+**Solution**
+
+We begin by looking at the trace plots.
+
+```{r}
+traceplot(mc); #Check for trends
+traceplot(mc,xlim=c(9000,10000)); #Zoom to check for periodicity
+```
+
+There is no clear sign of a trend or periodicity for any of the variables, which is a good start for convergence. Now let's look at the effective sample size and the Heidelberg-Welch:
+
+\newpage
+
+```{r}
+effectiveSize(mc); heidel.diag(mc)
+```
+
+There are 10000 samples kept in both chains and 150 samples for a total of 20150. This means that our effective sample sizes are very good, being near this value. The Heidelberg-Welch diagnostics pass for all variables. Therefore, the chains appear to converge.
+
+\newpage
+
+# Problem 4
+
+Use Stan (not **rstanarm**) to fit a simple linear regression model to the `iris` data.
+
+*Data distribution*
+
+$\mathtt{Petal.Width}_i \mid \boldsymbol{\beta}, \sigma^2 \stackrel{indep.}{\sim} N(\mu_i, \sigma^2)$ for $i=1,2,\ldots,n$ with 
+
+$$
+\mu_i=\beta_0 + \beta_1 \mathtt{Petal.Length}.
+$$
+
+*Prior distributions*
+
+$\beta_0,\beta_1 \stackrel{i.i.d.}{\sim} N(0, 10^2)$
+
+$\sigma^2 \sim \text{Inv-Gamma}(0.01, 0.01)$
+
+In a simple, tabular format, provide the posterior mean, the posterior standard deviation, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+\newpage
+
+**Solution**
+
+```{r include=FALSE}
+library(rstan)
+```
+
+```{r}
+#library(rstan)
+
+single_model = "
+data{
+  int<lower=1>  n;
+  vector[n]     Width; //response variable
+  vector[n]     Length;
+  real<lower=0> v;     //sample variance (for rbsq)
+}
+parameters{
+  real<lower=0> sigsq;//variance
+  real          beta0;//intercept
+  real          beta1;//slope
+}
+transformed parameters{
+  vector[n]     mu; //mean
+  mu = beta0 + beta1 * Length ;
+}
+model{
+  //priors
+  beta0 ~ normal(0,10);
+  beta1 ~ normal(0,10);
+  sigsq ~ inv_gamma(0.01,0.01);
+  //data dist
+  for(i in 1:n){Width[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigsq/v;
+  
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Width[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+if (!file.exists("stanmodels/ex2q4.rda")){
+  singmod = stan_model(model_code = single_model)
+  save(singmod,file = "stanmodels/ex2q4.rda",compress="xz")
+}
+load("stanmodels/ex2q4.rda")
+
+singdatfmt = list(n = length(data$Sepal.Length), v = var(data$Petal.Width),
+              Width = data$Petal.Width, Length = data$Petal.Length)
+singfit = sampling(singmod,singdatfmt,iter=20000,chains=2,cores=2)
+```
+
++----------+-------+-------+-------+--------+
+|Variable  |0.025  |Mean   |0.975  |Std Dev |
++==========+=======+=======+=======+========+
+|$\beta_0$ |-0.4396|-0.3631|-0.2844|0.03953 |
++----------+-------+-------+-------+--------+
+|$\beta_1$ |0.3969 |0.4157 |0.4342 |0.009505|
++----------+-------+-------+-------+--------+
+|$\sigma^2$|0.03456|0.04296|0.05429|0.005073|
++----------+-------+-------+-------+--------+
+
+\newpage
+
+# Problem 5
+
+Provide a point estimate of the regression equation for the simple linear regression model fit in the previous problem based on the posterior means of the parameters. Interpret each coefficient in the context of the problem.
+
+**Solution**
+
+Using the mean values of the regression coefficients, a point estimate would be:
+
+$$
+\mathrm{Width} = 0.4157\mathrm{Length} - 0.3631
+$$
+
+That is, the width of a petal increases, on average, by 0.4157 cm for every additional cm of length. The average petal is also 0.3631 cm less wide than 0.4157 times its length.
+
+\newpage
+
+# Problem 6
+
+Use Stan (not **rstanarm**) to fit a parallel lines linear regression model to the `iris` data.
+
+*Data distribution*
+
+$\mathtt{Petal.Width}_i \mid \boldsymbol{\beta}, \sigma^2 \stackrel{indep.}{\sim} N(\mu_i, \sigma^2)$ for $i=1,2,\ldots,n$ with 
+
+$$
+\mu_i=\beta_0 + \beta_1 \mathtt{Petal.Length} + \beta_2 D_{i,ve} + \beta_3 D_{i,vi},
+$$
+where $D_{ve}$ is the indicator variable for the `versicolor` species and $D_{vi}$ is the indicator variable for the `virginica` species.
+
+*Prior distributions*
+
+$\beta_0,\beta_1, \beta_2, \beta_3 \stackrel{i.i.d.}{\sim} N(0, 10^2)$.
+
+$\sigma^2 \sim \text{Inv-Gamma}(0.01, 0.01)$.
+
+In a simple, tabular format, provide the posterior mean, the posterior standard deviation, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the variance $\sigma^2$.
+
+**Solution**
+
+```{r}
+parallel_model = "
+data{
+  int<lower=1>  n;
+  vector[n]     Width; //response variable
+  vector[n]     Length;
+  real<lower=0> v;     //sample variance (for rbsq)
+  vector[n]     Dve;   //indicator
+  vector[n]     Dvi;
+}
+parameters{
+  real<lower=0> sigsq;//variance
+  real          beta0;//intercept
+  real          alph1;
+  real          alph2;
+  real          beta1;//slope
+}
+transformed parameters{
+  vector[n]     mu; //mean
+  mu = beta0 + beta1 * Length + alph1*Dve + alph2*Dvi;
+}
+model{
+  //priors
+  beta0 ~ normal(0,10);
+  beta1 ~ normal(0,10);
+  sigsq ~ inv_gamma(0.01,0.01);
+  //data dist
+  for(i in 1:n){Width[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigsq/v;
+  
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Width[i] | mu[i],sqrt(sigsq));}
+}
+"
+if (!file.exists("stanmodels/ex2q6.rda")){
+  paramod = stan_model(model_code = parallel_model)
+  save(paramod,file = "stanmodels/ex2q6.rda",compress="xz")
+}
+load("stanmodels/ex2q6.rda")
+
+paradatfmt = list(n = length(data$Sepal.Length), v = var(data$Petal.Width),
+              Width = data$Petal.Width, Length = data$Petal.Length,
+              Dve = data$Dve, Dvi = data$Dvi)
+parafit = sampling(paramod,paradatfmt,iter=20000,chains=2,cores=2)
+```
+
++----------+-------+--------+-------+--------+
+|Variable  |0.025  |Mean    |0.975  |Std Dev |
++==========+=======+========+=======+========+
+|$\beta_0$ |-0.2033|-0.09002|0.02152|0.05698 |
++----------+-------+--------+-------+--------+
+|$\beta_1$ |0.1613 |0.2301  |0.2991 |0.03483 |
++----------+-------+--------+-------+--------+
+|$\beta_2$ |0.2316 |0.4368  |0.6427 |0.1041  |
++----------+-------+--------+-------+--------+
+|$\beta_3$ |0.5513 |0.8381  |1.132  |0.1468  |
++----------+-------+--------+-------+--------+
+|$\sigma^2$|0.02609|0.03245 |0.04122|0.003859|
++----------+-------+--------+-------+--------+
+
+# Problem 7
+
+Provide a point estimate of the regression equation for the parallel lines linear regression model fit in the previous problem based on the posterior means of the parameters. Interpret each coefficient in the context of the problem.
+
+**Solution**
+
+Using the means of the regression coefficients, a point estimate would be:
+
+$$
+\mathrm{Width} = -0.09002 + 0.2301\mathrm{Length} + 0.4368 D_{\mathrm{ve}} + 0.8381 D_{\mathrm{vi}}
+$$
+
+This means that the average petal width increases by 0.2301 cm for each cm of length. The average Setosa is 0.09002 cm more narrow than 0.2301 times its length. On average, the Versicolor is 0.4368 cm wider than the Setosa, making it 0.3468 cm wider than predicted only by its length. On average, the Virginica is 0.8381 cm wider than the Setosa, making it 0.7481 cm longer than predicted only by its length.
+
+\newpage
+
+# Problem 8
+
+Use **rstanarm** (not Stan) to fit a separate lines linear regression model to the `iris` data. **Make sure to read the documentation of the function you use to fit the model.**
+
+*Data distribution*
+
+$\mathtt{Petal.Width}_i \mid \boldsymbol{\beta}, \sigma^2 \stackrel{indep.}{\sim} N(\mu_i, \sigma^2)$ for $i=1,2,\ldots,n$ with
+
+$$
+\mu_i=\beta_0 + \beta_1 \mathtt{Petal.Length} + \beta_2 D_{i,ve} + \beta_3 D_{i,vi} + \beta_4 \mathtt{Petal.Length} D_{i,ve} + \beta_5 \mathtt{Petal.Length} D_{i,vi},
+$$
+
+where $D_{ve}$ is the indicator variable for the `versicolor` species and $D_{vi}$ is the indicator variable for the `virginica` species.
+
+*Prior distributions*
+
+$\beta_0,\beta_1, \beta_2, \beta_3, \beta_4, \beta_5 \stackrel{i.i.d.}{\sim} N(0, 10^2)$.
+
+Let **rstanarm** use a default prior for $\sigma^2$.
+
+In a simple, tabular format, provide the posterior mean, the posterior standard deviation, the 0.025 quantile, and the 0.975 quantile for all regression coefficients and the sd $\sigma$.
+
+\newpage
+
+**Solution**
+
+```{r include=FALSE}
+library(rstanarm)
+```
+
+```{r}
+separate_model = stan_glm(Petal.Width ~ Petal.Length + Dve + Dvi + Petal.Length*Dve + Petal.Length*Dvi, 
+                          data = data, family = gaussian(), chains = 2, iter = 20000,
+                          #from my understanding this is regression coefficients ONLY, 
+                          prior = normal(0,10)) #so leaves sigsq default
+```
+
++----------+--------+--------+------+-------+
+|Variable  |0.025   |Mean    |0.975 |Std Dev|
++==========+========+========+======+=======+
+|$\beta_0$ |-0.4773 |-0.4799 |0.3789|0.2163 |
++----------+--------+--------+------+-------+
+|$\beta_1$ |-0.08698|0.2007  |0.4932|0.1470 |
++----------+--------+--------+------+-------+
+|$\beta_2$ |-0.6563 |-0.03508|0.5827|0.3159 |
++----------+--------+--------+------+-------+
+|$\beta_3$ |0.5218  |1.187   |1.843 |0.3367 |
++----------+--------+--------+------+-------+
+|$\beta_4$ |-0.1763 |0.1300  |0.4427|0.1567 |
++----------+--------+--------+------+-------+
+|$\beta_5$ |-0.3435 |-0.04208|0.2625|0.1539 |
++----------+--------+--------+------+-------+
+|$\sigma^2$|0.1593  |0.1782  |0.2014|0.01064|
++----------+--------+--------+------+-------+
+
+# Problem 9
+
+Which of the 4 fitted models (one-way ANOVA, simple linear regression, parallel lines, or separate lines) seems to best fit the data? In a simple, tabular format, provide the WAIC and LOOIC of each model to justify your answer.
+
+**Solution**
+
++--------------+-----+-----+
+|Model         |WAIC |LOOIC|
++==============+=====+=====+
+|ANOVA         |-0.2 |-0.2 |
++--------------+-----+-----+
+|Simple Linear |-43.2|-43.2|
++--------------+-----+-----+
+|Parallel Lines|-82.6|-82.6|
++--------------+-----+-----+
+|Separate Lines|-85.3|-85.2|
++--------------+-----+-----+
+
+By far the best model is the one-way ANOVA model, indicating petal widths are most strongly determined by their species. The next best model is the simple linear regression, which is unsurprising given the correlation between petal length and iris species. 
+
+\newpage
+
+# Problem 10
+
+Consider the `covid_20210307` data set in the **bayesutils** package. 
+
+This data set contains the number of confirmed and probable COVID-19 deaths and cases in U.S. states through March 7th, 2021 along with some very basic demographic information. While the data are taken from official sources, they are only intended for demonstration purposes.
+
+`covid_20210307` is a data frame with 50 rows and 7 variables:
+
+- `state_name`: state name
+- `state_abb`: state name abbreviation
+- `deaths`: number of confirmed and probable COVID-19 deaths
+- `cases`: number of confirmed and probable COVID-19 cases
+- `population`: population 5-year estimate from the 2017 American Community Survey
+- `income`: median income (U.S. dollars) 5-year estimate from the 2017 American Community Survey
+- `hs`: estimated percentage of population > 25 years old with a high school diploma based on the 2010 Census
+- `bs`: estimated percentage of population > 25 years old with a Bachelor's degree based on the 2010 Census
+- `vote_diff_2020`: difference between percentage of voters who voted for Joseph Biden versus Donald Trump in the 2020 election. This is (total Biden votes - total Trump votes) * 100 / (total Biden votes + total Trump votes).
+
+We will model the `deaths` in each state using the following model:
+
+$$\mathtt{deaths}_i \sim \text{Binomial}(\mathtt{population}_i, \pi_i), \quad i = 1,2,\ldots,50,$$
+with 
+
+$$
+\mathrm{logit}(\pi_i) = \beta_0 + \beta_1 \texttt{hs}_i.
+$$ 
+
+Fit a Bayesian version of this model. For all regression coefficients, assume independent $N(0, 100^2)$ prior distributions. Approximate the posterior using 4 chains with 10000 iterations (half as warmup.)
+
+Provide the posterior mean, standard deviation, 0.025, and 0.975 quantiles for all regression coefficients in a simple tabular format.
+
+Based on the posterior mean for $\beta_1$, what do you conclude about the relationship between `hs` and the probability of COVID-19 death in the states considered in this data set?
+
+\newpage
+
+**Solution**
+
+```{r}
+covfit = stan_glm(cbind(deaths,population - deaths) ~ hs,
+                  family=binomial(link="logit"),chains=4,iter=10000,
+                  prior = normal(0,100),data = covid_20210307)
+#covfit$stan_summary
+```
+
++---------+--------+---------+---------+---------+
+|Variable |0.025   |Mean     |0.975    |Std Dev  |
++=========+========+=========+=========+=========+
+|$\beta_0$|-5.688  |-5.642   |-5.5476  |0.03587  |
++---------+--------+---------+---------+---------+
+|$\beta_1$|-0.01048|-0.009663|-0.008850|0.0004196|
++---------+--------+---------+---------+---------+
+
+Based on the mean of $\beta_1$, the number of COVID-related deaths decreases by 0.009663 for each percent increase in the rate of high school education in the population.

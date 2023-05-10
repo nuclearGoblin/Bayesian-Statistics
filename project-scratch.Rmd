@@ -1,0 +1,2285 @@
+---
+title: "Project Scratch"
+author: "Kitty Harris"
+date: "2023-04-29"
+output: pdf_document
+---
+
+```{r}
+library("readxl")
+data = read_excel("input/literacydata.xlsx");
+data$Year = as.factor(data$Year) #don't want this treated as continuous
+#Indicator variables
+data$DA = as.integer(data$Race == "Asian")
+data$DB = as.integer(data$Race == "Black")
+data$DL = as.integer(data$Race == "Latino")
+data$DO = as.integer(data$Race == "Other")
+data$DW = as.integer(data$Race == "White")
+```
+
+Look at plots
+
+```{r}
+library("ggplot2")
+
+white = data[which(data$Race == "White"), ]
+black = data[which(data$Race == "Black"), ]
+asian = data[which(data$Race == "Asian"), ]
+latino = data[which(data$Race == "Latino"), ]
+other = data[which(data$Race == "Other"), ]
+all = data[which(data$Race == "All"), ]
+
+ggplot() + 
+  geom_density(data = data, aes(x=Pass,group=Race,lty=Race,fill=Race),alpha=0.25,size=1) +
+  xlab("Pass rate") + ylab("Density") + xlim(0,1)
+  ggtitle("Pass rate density - Breakdown by race") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+ggplot() +
+  geom_density(data = all, aes(x=Pass,group=Year,lty=Year,fill=Year),alpha=0.25,size=1) +
+  xlab("Pass rate") + ylab("Density") + xlim(0,1) +
+  ggtitle("Pass rate density - Breakdown by year") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+behaveddata = data[which(data$Year != "2022"), ][which(data$Location != "California"), ]
+
+ggplot(behaveddata,aes(x=Poverty,y=Pass)) + 
+  xlab("Percentage of county population in poverty") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Pass rate vs Poverty rate") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+maybe slight negative correlation
+
+```{r}
+ggplot(behaveddata,aes(x=Income,y=Pass)) + 
+  xlab("County median income") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Pass rate vs Median Household Income") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+slight positive correlation
+
+```{r}
+ggplot(behaveddata,aes(x=Uninsured,y=Pass)) + 
+  xlab("County rate of uninsurance") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Pass rate vs Rate of uninsurance") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+no clear difference
+
+```{r}
+ggplot(behaveddata,aes(x=HS,y=Pass)) + 
+  xlab("County rate high school grad") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Pass rate vs Portion adults graduated high school") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+no clear difference
+
+```{r}
+ggplot(behaveddata,aes(x=College,y=Pass)) + 
+  xlab("County rate 4-year grad") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Pass rate vs Portion adults graduated Bachelor's or higher") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+maybe disperses more??
+
+```{r}
+ggplot(behaveddata,aes(x=ESL,y=Pass)) + 
+  xlab("County % ESL") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Pass rate vs Portion living in non-English-speaking households") + 
+  geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+no clear difference
+
+new look at race without 2022:
+
+```{r}
+ggplot() + 
+  geom_density(data = behaveddata, aes(x=Pass,group=Race,lty=Race,fill=Race),alpha=0.25,size=1) +
+  xlab("Pass rate") + ylab("Density") + xlim(0,1)
+  ggtitle("Pass rate density - Breakdown by race, without 2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Modeling
+
+1. we will discard the 2022 data and analyze it separately. post-covid data is pretty clearly modeled differently.
+2. race is clearly the main factor -- so we want to see how other things correlate with it but they won't be driving factors on their own.
+
+Start by making a model to compare newer models to
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  mu = betaA + betaB*DB + betaL*DL + betaO*DO + betaW*DW;
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood MUST be named this.
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/anova.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, DB = noalldata$DB, 
+                 DL = noalldata$DL, DO = noalldata$DO, DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+anova_fit = sampling(mod,datarefmt,iter=20000)
+summary(anova_fit,c("sigsq","betaA","betaB","betaL","betaO","betaW","Rbsq"))$summary
+waic(extract_log_lik(anova_fit))
+loo(extract_log_lik(anova_fit))
+```
+
+Rbsq 0.455, 2.5% 0.38, not terrible
+waic not bad either, -747!
+
+```{r}
+library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variable
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + (betaB + alphaB*ESL[i])*DB[i] + (betaL + alphaL*ESL[i])*DL[i] + (betaO + alphaO*ESL[i])*DO[i] + (betaW + alphaW*ESL[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ancova_ESL.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+ancovaesl_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(ancovaesl_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(ancovaesl_fit))
+loo(extract_log_lik(ancovaesl_fit))
+```
+
+-783, so this is a minor but relevant factor. Rbsq is 0.5 so not fantastic but not awful given 2.5% is >0.4
+
+```{r}
+library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Uninsured;  //numeric variable
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*Uninsured[i] + (betaB + alphaB*Uninsured[i])*DB[i] + (betaL + alphaL*Uninsured[i])*DL[i] + (betaO + alphaO*Uninsured[i])*DO[i] + (betaW + alphaW*Uninsured[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ancova_Uninsured.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, Uninsured = noalldata$Uninsured, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+ancovaunins_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(ancovaunins_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(ancovaunins_fit))
+loo(extract_log_lik(ancovaunins_fit))
+```
+
+Rbsq better than ANOVA, as is WAIC, but not hugely.
+
+```{r}
+library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Poverty;  //numeric variable
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*Poverty[i] + (betaB + alphaB*Poverty[i])*DB[i] + (betaL + alphaL*Poverty[i])*DL[i] + (betaO + alphaO*Poverty[i])*DO[i] + (betaW + alphaW*Poverty[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ancova_Poverty.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, Poverty = noalldata$Poverty, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+ancovapoverty_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(ancovapoverty_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(ancovapoverty_fit))
+loo(extract_log_lik(ancovapoverty_fit))
+```
+
+Ooh, WAY better!
+
+```{r}
+library("loo"); library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Income;  //numeric variable
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*Income[i] + (betaB + alphaB*Income[i])*DB[i] + (betaL + alphaL*Income[i])*DL[i] + (betaO + alphaO*Income[i])*DO[i] + (betaW + alphaW*Income[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ancova_Income.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, Income = noalldata$Income/10000, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+ancovaincome_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(ancovaincome_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(ancovaincome_fit))
+loo(extract_log_lik(ancovaincome_fit))
+```
+
+Even better.
+
+```{r}
+library("loo"); library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     HS;  //numeric variable
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*HS[i] + (betaB + alphaB*HS[i])*DB[i] + (betaL + alphaL*HS[i])*DL[i] + (betaO + alphaO*HS[i])*DO[i] + (betaW + alphaW*HS[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ancova_HS.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, HS = noalldata$HS,
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+ancovahs_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(ancovahs_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(ancovahs_fit))
+loo(extract_log_lik(ancovahs_fit))
+```
+
+this is actually worse than anova; doesn't seem relevant.
+
+```{r}
+library("loo"); library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     College;  //numeric variable
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*College[i] + (betaB + alphaB*College[i])*DB[i] + (betaL + alphaL*College[i])*DL[i] + (betaO + alphaO*College[i])*DO[i] + (betaW + alphaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ancova_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, College = noalldata$College,
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW)
+options(mc.cores = parallel::detectCores())
+ancovacol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(ancovacol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(ancovacol_fit))
+loo(extract_log_lik(ancovacol_fit))
+```
+
+MAJOR factor
+
+```{r}
+library("loo"); library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DA;
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     A;  //numeric variables
+  vector[n]     B;
+  vector[n]     L;
+  vector[n]     O;
+  vector[n]     W;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*A[i]*DA[i] + (betaB + alphaB*B[i])*DB[i] + (betaL + alphaL*L[i])*DL[i] + (betaO + alphaO*O[i])*DO[i] + (betaW + alphaW*W[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100);
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/separate.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass,
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, DA = noalldata$DA,
+                 A = noalldata$Asian, B = noalldata$Black, L = noalldata$Latino,
+                 O = noalldata$Other, W = noalldata$White
+                 )
+options(mc.cores = parallel::detectCores())
+separate_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(separate_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(separate_fit))
+loo(extract_log_lik(separate_fit))
+```
+
+also significant.
+
+```{r}
+library("rstan")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Uninsured;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + deltaA*Uninsured[i] + (betaB + alphaB*ESL[i] + deltaB*Uninsured[i])*DB[i] + (betaL + alphaL*ESL[i] + deltaL*Uninsured[i])*DL[i] + (betaO + alphaO*ESL[i] + deltaO*Uninsured[i])*DO[i] + (betaW + alphaW*ESL[i] + deltaW*Uninsured[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Uninsurance
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Unins.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, Uninsured = noalldata$Uninsured)
+options(mc.cores = parallel::detectCores())
+eslunins_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslunins_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslunins_fit))
+loo(extract_log_lik(eslunins_fit))
+```
+
+better than either alone; continue.
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Uninsured;
+  vector[n]     Poverty;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + deltaA*Uninsured[i] + thetaA*Poverty[i] + (betaB + alphaB*ESL[i] + deltaB*Uninsured[i] + thetaB*Poverty[i])*DB[i] + (betaL + alphaL*ESL[i] + deltaL*Uninsured[i] + thetaL*Poverty[i])*DL[i] + (betaO + alphaO*ESL[i] + deltaO*Uninsured[i] + thetaO*Poverty[i])*DO[i] + (betaW + alphaW*ESL[i] + deltaW*Uninsured[i] + thetaW*Poverty[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Uninsurance
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  thetaA ~ normal(0,100);
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Unins_Pov.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, 
+                 Uninsured = noalldata$Uninsured, Poverty = noalldata$Poverty)
+options(mc.cores = parallel::detectCores())
+esluninspov_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(esluninspov_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(esluninspov_fit))
+loo(extract_log_lik(esluninspov_fit))
+```
+
+better than previous; check if uninsured and poverty are redundant by removing uninsured.
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Poverty;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + thetaA*Poverty[i] + (betaB + alphaB*ESL[i] + thetaB*Poverty[i])*DB[i] + (betaL + alphaL*ESL[i] + thetaL*Poverty[i])*DL[i] + (betaO + alphaO*ESL[i] + thetaO*Poverty[i])*DO[i] + (betaW + alphaW*ESL[i] + thetaW*Poverty[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, 
+                 Poverty = noalldata$Poverty)
+options(mc.cores = parallel::detectCores())
+eslpov_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpov_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslpov_fit))
+loo(extract_log_lik(eslpov_fit))
+```
+
+Including both uninsurance and poverty is not significantly better than including only poverty.
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Income;
+  vector[n]     Poverty;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + deltaA*Income[i] + thetaA*Poverty[i] + (betaB + alphaB*ESL[i] + deltaB*Income[i] + thetaB*Poverty[i])*DB[i] + (betaL + alphaL*ESL[i] + deltaL*Income[i] + thetaL*Poverty[i])*DL[i] + (betaO + alphaO*ESL[i] + deltaO*Income[i] + thetaO*Poverty[i])*DO[i] + (betaW + alphaW*ESL[i] + deltaW*Income[i] + thetaW*Poverty[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Income
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Inc.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, 
+                 Poverty = noalldata$Poverty, Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+eslpovinc_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpovinc_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslpovinc_fit))
+loo(extract_log_lik(eslpovinc_fit))
+```
+
+better than esl/pov; let's look at esl/inc
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Income;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + deltaA*Income[i] + (betaB + alphaB*ESL[i] + deltaB*Income[i])*DB[i] + (betaL + alphaL*ESL[i] + deltaL*Income[i])*DL[i] + (betaO + alphaO*ESL[i] + deltaO*Income[i])*DO[i] + (betaW + alphaW*ESL[i] + deltaW*Income[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Income
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Inc.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+eslinc_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslinc_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslinc_fit))
+loo(extract_log_lik(eslinc_fit))
+```
+
+So both are definitely relevant. 
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Income;
+  vector[n]     Poverty;
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + deltaA*Income[i] + thetaA*Poverty[i] + gammaA*College[i] + (betaB + alphaB*ESL[i] + deltaB*Income[i] + thetaB*Poverty[i] + gammaB*College[i])*DB[i] + (betaL + alphaL*ESL[i] + deltaL*Income[i] + thetaL*Poverty[i] + gammaL*College[i])*DL[i] + (betaO + alphaO*ESL[i] + deltaO*Income[i] + thetaO*Poverty[i] + gammaO*College[i])*DO[i] + (betaW + alphaW*ESL[i] + deltaW*Income[i] + thetaW*Poverty[i] + gammaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Income
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Inc_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, College = noalldata$College,
+                 Poverty = noalldata$Poverty, Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+eslpovinccol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpovinccol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslpovinccol_fit))
+loo(extract_log_lik(eslpovinccol_fit))
+```
+
+```{r}
+summary(eslpovinccol_fit,c("betaA","alphaA","deltaA","thetaA","gammaA"))
+```
+
+still improving; last variable:
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DA;
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Income;
+  vector[n]     Poverty;
+  vector[n]     College;
+  vector[n]     Asian;
+  vector[n]     Black;
+  vector[n]     Latino;
+  vector[n]     Other;
+  vector[n]     White;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+  real          etaA;
+  real          etaB;
+  real          etaL;
+  real          etaO;
+  real          etaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + deltaA*Income[i] + thetaA*Poverty[i] + gammaA*College[i] + etaA*Asian[i]*DA[i] + (betaB + alphaB*ESL[i] + deltaB*Income[i] + thetaB*Poverty[i] + gammaB*College[i] + etaB*Black[i])*DB[i] + (betaL + alphaL*ESL[i] + deltaL*Income[i] + thetaL*Poverty[i] + gammaL*College[i] + etaL*Latino[i])*DL[i] + (betaO + alphaO*ESL[i] + deltaO*Income[i] + thetaO*Poverty[i] + gammaO*College[i] + etaO*Other[i])*DO[i] + (betaW + alphaW*ESL[i] + deltaW*Income[i] + thetaW*Poverty[i] + gammaW*College[i] + etaW*White[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Income
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  etaA ~ normal(0,100);   //Local minority
+  etaB ~ normal(0,100);
+  etaL ~ normal(0,100);
+  etaO ~ normal(0,100);
+  etaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Inc_Col_Loc.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, DA = noalldata$DA,
+                 College = noalldata$College,
+                 Poverty = noalldata$Poverty, Income = noalldata$Income/10000,
+                 Asian = noalldata$Asian, Black = noalldata$Black,
+                 Latino = noalldata$Latino, Other = noalldata$Other,
+                 White = noalldata$White)
+options(mc.cores = parallel::detectCores())
+eslpovinccolloc_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpovinccolloc_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslpovinccolloc_fit))
+loo(extract_log_lik(eslpovinccolloc_fit))
+```
+
+Okay! Now to check the summary for any values overlapping 0.
+
+```{r}
+summary(eslpovinccolloc_fit,c("betaA","betaB","betaL","betaO","betaW"))
+```
+
+the baseline for Asian, Black, and White students is possibly the same -- but this variable doesn't really make sense to discard...
+
+```{r}
+summary(eslpovinccolloc_fit,c("alphaA","alphaB","alphaL","alphaO","alphaW"))
+```
+
+ESL may not be a major factor for white students -- but no sense discarding it only for one group.
+
+```{r}
+summary(eslpovinccolloc_fit,c("deltaA","deltaB","deltaL","deltaO","deltaW"))
+```
+
+Income coefficient straddles 0 for most groups. Perhaps it is redundant after all?
+
+```{r}
+summary(eslpovinccolloc_fit,c("thetaA","thetaB","thetaL","thetaO","thetaW"))
+```
+
+same with poverty. try with just the poverty factor.
+
+```{r}
+summary(eslpovinccolloc_fit,c("gammaA","gammaB","gammaL","gammaO","gammaW"))
+```
+
+Keep, as it is significant for some groups even if not others
+
+
+```{r}
+summary(eslpovinccolloc_fit,c("etaA","etaB","etaL","etaO","etaW"))
+```
+this is an interesting one.
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DA;
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Poverty;
+  vector[n]     College;
+  vector[n]     Asian;
+  vector[n]     Black;
+  vector[n]     Latino;
+  vector[n]     Other;
+  vector[n]     White;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+  real          etaA;
+  real          etaB;
+  real          etaL;
+  real          etaO;
+  real          etaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + thetaA*Poverty[i] + gammaA*College[i] + etaA*Asian[i]*DA[i] + (betaB + alphaB*ESL[i] + thetaB*Poverty[i] + gammaB*College[i] + etaB*Black[i])*DB[i] + (betaL + alphaL*ESL[i] + thetaL*Poverty[i] + gammaL*College[i] + etaL*Latino[i])*DL[i] + (betaO + alphaO*ESL[i] + + thetaO*Poverty[i] + gammaO*College[i] + etaO*Other[i])*DO[i] + (betaW + alphaW*ESL[i] + thetaW*Poverty[i] + gammaW*College[i] + etaW*White[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  etaA ~ normal(0,100);   //Local minority
+  etaB ~ normal(0,100);
+  etaL ~ normal(0,100);
+  etaO ~ normal(0,100);
+  etaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Col_Loc.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, DA = noalldata$DA,
+                 College = noalldata$College,
+                 Poverty = noalldata$Poverty, 
+                 Asian = noalldata$Asian, Black = noalldata$Black,
+                 Latino = noalldata$Latino, Other = noalldata$Other,
+                 White = noalldata$White)
+options(mc.cores = parallel::detectCores())
+eslpovcolloc_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpovcolloc_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslpovcolloc_fit))
+loo(extract_log_lik(eslpovcolloc_fit))
+```
+Income isn't a significant factor here. Now let's get our variables:
+
+```{r}
+summary(eslpovinccolloc_fit,c("betaA","alphaA","thetaA","gammaA","etaA"))
+```
+
+Some of these are confusing! But I don't have time to fix that.
+
+```{r}
+summary(eslpovinccolloc_fit,c("betaB","alphaB","thetaB","gammaB","etaB"))
+```
+
+wait, was the confounding variable for income actually demographics? looking back, this isn't hugely better than this one. so we go back to that? no, that makes it look like income isn't relevant with both poverty and college attendance. so we will do:
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Poverty;
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + thetaA*Poverty[i] + gammaA*College[i] + (betaB + alphaB*ESL[i] + thetaB*Poverty[i] + gammaB*College[i])*DB[i] + (betaL + alphaL*ESL[i] + thetaL*Poverty[i] + gammaL*College[i])*DL[i] + (betaO + alphaO*ESL[i] + thetaO*Poverty[i] + gammaO*College[i])*DO[i] + (betaW + alphaW*ESL[i] + thetaW*Poverty[i] + gammaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, College = noalldata$College,
+                 Poverty = noalldata$Poverty)
+options(mc.cores = parallel::detectCores())
+eslpovcol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpovcol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslpovcol_fit))
+loo(extract_log_lik(eslpovcol_fit))
+```
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Income;
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + thetaA*Income[i] + gammaA*College[i] + (betaB + alphaB*ESL[i] + thetaB*Income[i] + gammaB*College[i])*DB[i] + (betaL + alphaL*ESL[i] + thetaL*Income[i] + gammaL*College[i])*DL[i] + (betaO + alphaO*ESL[i] + thetaO*Income[i] + gammaO*College[i])*DO[i] + (betaW + alphaW*ESL[i] + thetaW*Income[i] + gammaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Income
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Inc_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, College = noalldata$College,
+                 Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+eslinccol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslinccol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslinccol_fit))
+loo(extract_log_lik(eslinccol_fit))
+```
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Poverty;//numeric variables
+  vector[n]     Income;
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*Poverty[i] + thetaA*Income[i] + gammaA*College[i] + (betaB + alphaB*Poverty[i] + thetaB*Income[i] + gammaB*College[i])*DB[i] + (betaL + alphaL*Poverty[i] + thetaL*Income[i] + gammaL*College[i])*DL[i] + (betaO + alphaO*Poverty[i] + thetaO*Income[i] + gammaO*College[i])*DO[i] + (betaW + alphaW*Poverty[i] + thetaW*Income[i] + gammaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //Poverty
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Income
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/Pov_Inc_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, Poverty = noalldata$Poverty, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, College = noalldata$College,
+                 Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+povinccol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslinccol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(povinccol_fit))
+loo(extract_log_lik(povinccol_fit))
+```
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Poverty;//numeric variables
+  vector[n]     Income;
+  vector[n]     College;
+  vector[n]     HS;
+  vector[n]     ESL;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+  real          phiA;
+  real          phiB;
+  real          phiL;
+  real          phiO;
+  real          phiW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*Poverty[i] + thetaA*Income[i] + gammaA*College[i] + deltaA*HS[i] + phiA*ESL[i] + (betaB + alphaB*Poverty[i] + thetaB*Income[i] + gammaB*College[i] + deltaB*HS[i] + phiB*ESL[i])*DB[i] + (betaL + alphaL*Poverty[i] + thetaL*Income[i] + gammaL*College[i] + deltaL*HS[i] + phiL*ESL[i])*DL[i] + (betaO + alphaO*Poverty[i] + thetaO*Income[i] + gammaO*College[i] + deltaO*HS[i] + phiO*ESL[i])*DO[i] + (betaW + alphaW*Poverty[i] + thetaW*Income[i] + gammaW*College[i] + deltaW*HS[i] + phiW*ESL[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //Poverty
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Income
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //HS
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  phiA ~ normal(0,100); //ESL
+  phiB ~ normal(0,100);
+  phiL ~ normal(0,100);
+  phiO ~ normal(0,100);
+  phiW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Inc_Col_HS.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, Poverty = noalldata$Poverty, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, College = noalldata$College,
+                 ESL = noalldata$ESL, HS = noalldata$HS,
+                 Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+povinccolhs_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslinccolhs_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(povinccolhs_fit))
+loo(extract_log_lik(povinccolhs_fit))
+```
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Income;
+  vector[n]     Poverty;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          deltaA;
+  real          deltaB;
+  real          deltaL;
+  real          deltaO;
+  real          deltaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + deltaA*Income[i] + thetaA*Poverty[i] + (betaB + deltaB*Income[i] + thetaB*Poverty[i])*DB[i] + (betaL + deltaL*Income[i] + thetaL*Poverty[i])*DL[i] + (betaO + deltaO*Income[i] + thetaO*Poverty[i])*DO[i] + (betaW + deltaW*Income[i] + thetaW*Poverty[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  deltaA ~ normal(0,100); //Income
+  deltaB ~ normal(0,100);
+  deltaL ~ normal(0,100);
+  deltaO ~ normal(0,100);
+  deltaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/Pov_Inc.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, 
+                 Poverty = noalldata$Poverty, Income = noalldata$Income/10000)
+options(mc.cores = parallel::detectCores())
+povinc_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(povinc_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(povinc_fit))
+loo(extract_log_lik(povinc_fit))
+```
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + thetaA*College[i] + (betaB + alphaB*ESL[i] + thetaB*College[i])*DB[i] + (betaL + alphaL*ESL[i] + thetaL*College[i])*DL[i] + (betaO + alphaO*ESL[i] + thetaO*College[i])*DO[i] + (betaW + alphaW*ESL[i] + thetaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, 
+                 College = noalldata$College)
+options(mc.cores = parallel::detectCores())
+eslcol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslcol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(eslcol_fit))
+loo(extract_log_lik(eslcol_fit))
+```
+
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     Poverty;  //numeric variables
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*Poverty[i] + thetaA*College[i] + (betaB + alphaB*Poverty[i] + thetaB*College[i])*DB[i] + (betaL + alphaL*Poverty[i] + thetaL*College[i])*DL[i] + (betaO + alphaO*Poverty[i] + thetaO*College[i])*DO[i] + (betaW + alphaW*Poverty[i] + thetaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //Poverty
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //College
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/Pov_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, College = noalldata$College, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, 
+                 Poverty = noalldata$Poverty)
+options(mc.cores = parallel::detectCores())
+povcol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(povcol_fit,c("sigsq","Rbsq"))$summary
+waic(extract_log_lik(povcol_fit))
+loo(extract_log_lik(povcol_fit))
+```

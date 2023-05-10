@@ -1,0 +1,380 @@
+---
+title: "Imbalances in Early English Literacy"
+author: "Kitty Harris"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    includes:
+      in_header: "input/preamble.tex"
+fontsize: 12
+bibliography: "input/refs.bib"
+---
+
+\maketitle
+\newpage
+
+Literacy is a crucial skill for modern-day life. Much of day-to-day communication is in written form, and literacy entails not only our ability to understand surface-level communication but also to further interpret information given to us. Because of the way language skills build off of one another, it is therefore important to catch as early as possible when students are falling behind. Despite not having an official language, in the United States, English is treated as the default language for many communications as well as at jobs and educational institutions; therefore, we analyze data for English literacy in particular as it is both important for access to jobs and education and has data more readily available. The goal of this analysis is to identify what factors systematically impact students' literacy, including how those factors may intersect with one another, and use this information to identify possible solutions. 
+
+The data used for this analysis looks at language arts proficiency test performance for third-graders in California in 2018, 2019, and 2022.[@kidscount] For the privacy of the students, the data is pre-aggregated by race and by county, and any data containing ten or fewer students was not published. Therefore, rather than individual scores, we have the pass rate of each category of students. To obtain demographic data for each county, we use the U.S. census data from the closest available year to the data, 2020. [@census] The race categories provided for the test data are: Asian (including Filipino, Native Hawaiian, and Pacific Islander), Black, Latino, White, and Other (including multiracial and Native American). Variables considered from the census data are: medium household income; poverty rate; portion of individuals living in households where English is not the primary language spoken at home; portion of individuals over 25 years of age with a high school diploma, equivalent, or higher; portion of individuals over 25 years of age with a bachelor's degree or higher; portion of individuals who do not have health insurance; and the racial demographic breakdown in categories equivalent to those provided in the test data. Income will be used in tens of thousands of dollars per year, rather than the provided dollars per year, to keep it on a closer scale to other numeric variables, which all range from zero to one.
+
+There is some concern over the behavior of the data over time. There was no data present for 2020 or 2021 due to challenges with testing during shut-downs associated with the COVID-19 pandemic. However, this raises the question -- is data from 2022 comparable to data from 2018 and 2019, and if it is not, which will be a better predictor going forward? To answer the former question, we look at a breakdown of scores by year:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library("readxl"); library("ggplot2")
+data = read_excel("input/literacydata.xlsx");
+data = data[which(data$Location != "California"), ]
+data$Year = as.factor(data$Year) #don't want this treated as continuous
+#Indicator variables
+data$DA = as.integer(data$Race == "Asian")
+data$DB = as.integer(data$Race == "Black")
+data$DL = as.integer(data$Race == "Latino")
+data$DO = as.integer(data$Race == "Other")
+data$DW = as.integer(data$Race == "White")
+#For plotting
+all = data[which(data$Race == "All"), ]
+
+#Plot by year
+ggplot() +
+  geom_density(data = all, aes(x=Pass,group=Year,lty=Year,fill=Year),alpha=0.25,size=1) +
+  xlab("Pass rate") + ylab("Density") + xlim(0,1) +
+  ggtitle("Pass rate density - Breakdown by year") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+All three years look different from one another, but the 2022 data has markedly different behavior, with a second local peak instead of "bumps" where they are present in the 2018 and 2019 data. The overall pass rates also differ significantly; they are 0.4822 for 2018, 0.4854 for 2019, and only 0.4217 for 2022. While we have no way of knowing for certain that these differences are due to the pandemic, it is likely the case, and if it is, it is unlikely to be a good predictor for the performance of future students. Third-graders in 2022 spent their first two grades in the pandemic, and therefore did not receive the same education as students before them or those after them due to remote, hybrid, and otherwise altered schooling. We look at the breakdown by race with and without 2022 data to see if it significantly impacts the behavior of other variables:
+
+```{r echo=FALSE}
+library(gridExtra)
+behaveddata = data[which(data$Year != "2022"), ]
+p1 <- ggplot() + 
+  geom_density(data = data, aes(x=Pass,group=Race,lty=Race,fill=Race),alpha=0.25,size=1) +
+  xlab("Pass") + ylab("Density") + xlim(0,1) + ylim(0,7) +
+  ggtitle("With 2022") + 
+  theme(plot.title = element_text(hjust = 0.5),legend.position="none",
+        axis.title.x = element_text(hjust=2))
+p2 <- ggplot() + 
+  geom_density(data = behaveddata, aes(x=Pass,group=Race,lty=Race,fill=Race),alpha=0.25,size=1) +
+  xlab("Pass rate") + xlim(0,1) + ylim(0,7) +
+  ggtitle("2018-2019 Only") + 
+  theme(plot.title = element_text(hjust = 0.5), axis.text.y = element_blank(),
+        axis.title.y = element_blank(),axis.ticks.y = element_blank(),
+        legend.position=c(0.9,0.75),axis.title.x = element_text(hjust = -0.15))
+grid.arrange(p1,p2,ncol=2)
+```
+The 2022 data does appear to alter the behavior on a per-group basis, not only universally; we see that features specific to certain groups become visible or more pronounced in the 2018-2019 data, even though these features are not all in the same places. For example, there is a bump that appears for the Asian student group near 0.7, while another bump becomes apparent for the Latino student group around 0.25. Because the goal of this analysis is not to measure the effects of the COVID-19 pandemic, and because we expect students' education moving forward not to look like their education did during this pandemic, we consider the 2022 data an outlier and do not use it in our analysis.
+
+Next, let us look at the influence of the demographic breakdown on pass rates. What we are most interested in is whether students tend to score better the greater the proportion of people in their area who share their race is; henceforth, we will refer to this as "local minority status" for simplicity, although we do not use it as a Boolean variable. To avoid overcomplicating the model and confounding results, we will look only at local minority status and not how all demographic variables interact with all student race groups.
+
+```{r echo=FALSE}
+p1 <- ggplot(behaveddata[which(behaveddata$Race == "Asian"), ],aes(x=Asian,y=Pass)) + 
+  xlab("") + ylab("Pass Rate") + 
+  ggtitle("Asian") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p2 <- ggplot(behaveddata[which(behaveddata$Race == "Black"), ],aes(x=Black,y=Pass)) + 
+  xlab("") + ylab("") + 
+  ggtitle("Black") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p3 <- ggplot(behaveddata[which(behaveddata$Race == "Latino"), ],aes(x=Latino,y=Pass)) + 
+  xlab("") + ylab("") + 
+  ggtitle("Latino") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p4 <- ggplot(behaveddata[which(behaveddata$Race == "Other"), ],aes(x=Other,y=Pass)) + 
+  xlab("Portion of Local Population") + ylab("") + 
+  ggtitle("Other") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p5 <- ggplot(behaveddata[which(behaveddata$Race == "White"), ],aes(x=White,y=Pass)) + 
+  xlab("") + ylab("Pass Rate") + 
+  ggtitle("White") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(p1,p2,p3,p5,p4,ncol=3)
+```
+
+It is difficult to draw any initial conclusions about the effect of local minority status from data exploration. Wherever there appears to be a trend in the data, there are also changes in the amount of data available, so it is unclear if there are genuine trends or if there is simply not enough data available. We will consider these variables in analysis, but it is possible they will not have any clear effect independent of other variables. 
+
+We can take a similar look at the effect of our other variables on pass rate regardless of race. Note that, when plotting, we call the portion of people living in households where English is not the primary language spoken at home "ESL" -- this is similar to the population for whom English is a second language, and may be equivalent in most cases, but the two are not necessarily the same. However, we use this shorthand for the sake of space.
+
+```{r echo=FALSE}
+p1 <- ggplot(behaveddata,aes(x=Poverty,y=Pass)) + 
+  xlab("Poverty Rate") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Poverty") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p2 <- ggplot(behaveddata,aes(x=Income/10000,y=Pass)) + 
+  xlab("County MHI, $10,000s") + ylab("") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Income") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p3 <- ggplot(behaveddata,aes(x=Uninsured,y=Pass)) + 
+  xlab("Uninsurance Rate") + ylab("") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("Uninsurance") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p4 <- ggplot(behaveddata,aes(x=HS,y=Pass)) + 
+  xlab("High School Grade Rate") + ylab("Pass Rate") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("High School Education") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p5 <- ggplot(behaveddata,aes(x=College,y=Pass)) + 
+  xlab("4-year Grad Rate") + ylab("") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("College Education") + geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+p6 <- ggplot(behaveddata,aes(x=ESL,y=Pass)) + 
+  xlab("Portion of County ESL") + ylab("") + 
+  #xlim(0,1) + ylim(0,1) + 
+  ggtitle("ESL Household") + 
+  geom_point() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(p1,p2,p3,p4,p5,p6,ncol=3)
+```
+There is considerable variability with regards to each of these variables. There appears to be a negative correlation between pass rate and both poverty rate as well as uninsurance, as we might expect; likewise, there is an apparent positive correlation between pass rate and medium household income, although this relationship seems to plateau around $100,000. There seems to be a positive correlation between the pass rate and both education variables as well. There is no clear effect from the non-English household variable; there appears to be some positive correlation at the beginning, but the data appears mostly flat. For now, we will consider all of these variables, paying particular attention to redundancies in the poverty, uninsurance, and income variables, redundancies between the two education variables, and the effectiveness of the non-English household variable.
+
+We operate under the assumption that the pass rates are normally distributed and any apparent distortions are the result of a shift in the mean due to one or more of the variables described above. We will use non-informative priors of $N(0,100)$ for regression coefficients and $\mathrm{Inv-Gamma}(0.01,0.01)$ for the variance. While first determining the most appropriate model, we use four chains, each of length 20,000, with a warm-up period of 10,000. In order to determine what variables provide a meaningful, non-redundant improvement to the model, we start with a one-way ANOVA model and compare its WAIC and LOOIC to altered models. The ANOVA model is:
+
+$$
+\mu_i = \beta_0 + \beta_1D_B + \beta_2D_L + \beta_3D_O + \beta_4D_W
+$$
+
+where $D_B, D_L, D_O, D_W$ are indicator variables for the student groups Black, Latino, Other, and White student groups, respectively, in alphabetical order, making Asian students the reference group. The WAIC and LOOIC for this model are $-747$, although the mean of $R_b^2$ is low at $0.48$. The next several models fit have means as:
+
+$$
+\mu_i = \beta_0 + \alpha_0 V + (\beta_1 + \alpha_1 V)D_B + (\beta_2 + \alpha_2 V)D_L + (\beta_3 + \alpha_3 V)D_O + (\beta_4 + \alpha_4 V)D_W
+$$
+
+where V is the variable in question: ESL, uninsurance, poverty, income, high school, or college. The WAIC and LOOIC when including only the ESL variable are $-783$, an improvement, although $R_b^2$ was still low with a mean of $0.50$. Including only the uninsurance variable gives WAIC and LOOIC of $-758$, a very small improvement over the ANOVA model, with the mean $R_b^2$ staying at $0.48$. Because this constitutes less than a 2\% difference in the WAIC (compared to the smaller/higher of the two values), we will consider it to be an insignificant influence and not include the uninsurance variable. The poverty variable is a more significant factor, with WAIC and LOOIC $-889$ and $R_b^2$ of $0.62$, as is income, with WAIC and LOOIC $-961$ and mean $R_b^2$ of $0.67$. The fit for the model including the high school education variable had WAIC and LOOIC $-757$ and mean $R_b^2$ of $0.54$, only a minor improvement over the ANOVA model. This is, like the uninsurance variable, less than a 2\% improvement, so the high school education variable will not be considered. The improvement for the college education variable was much more significant with WAIC and LOOIC $-933$ and mean $R_b^2$ of $0.64$. Therefore, we proceed continuing to consider all of the above variables. The WAIC and LOOIC values were calculated separately for each model, but were always within $\pm 1$ of each other.
+
+Next, we look at a model based on local minority status with mean:
+
+$$
+\mu_i = \beta_0 + \alpha_0 A D_A + (\beta_1 + \alpha_1 B)D_B + (\beta_2 + \alpha_2 L)D_L + (\beta_3 + \alpha_3 O)D_O + (\beta_4 + \alpha_4 W)D_W
+$$
+
+where $D_A$ is the indicator for the Asian student group, and $A,B,L,O,W$ are the proportion of the local demographics who fall under Asian, Black, Latino, Other, and White, respectively. This model gave WAIC and LOOIC $-799$ and mean $R_b^2$ of $0.58$, an improvement over the ANOVA model as well. Now, we tweak the model one variable at a time to find the best combination of variables.
+
+The next model considered includes both the ESL and poverty variables. This gave WAIC and LOOIC $-949$ and a mean $R_b^2$ of $0.70$, indicating a considerable improvement over either variable alone.
+
+Including income alongside ESL and poverty gives a much better result with WAIC and LOOIC $-1001$ and a mean $R_b^2$ of $0.71$. Removing the poverty variable reduces the quality of the fit, with WAIC and LOOIC of only $976$ and mean $R_b^2$ of $0.68$, and removing the ESL variable does the same, with WAIC and LOOIC $-972$ and mean $R_b^2$ of $0.68$, so we keep all three variables.
+
+Adding in the college education variable continues to improve the fit with a WAIC of $-1032$, a LOOIC of $-1031$, and a mean $R_b^2$ of $0.73$. Removing the income variable at this point gives WAIC and LOOIC $-1013$ and mean $R_b^2$ of $0.72$, which is an effect of less than 2\%, so the income variable appears to be redundant with the college and poverty variables both present. Removing the poverty variable, leaving only ESL and college, gives WAIC and LOOIC $-990$ and a mean $R_b^2$ of $0.70$, so the poverty variable is still significant. Likewise, using only poverty and college gives WAIC and LOOIC $-949$ and a mean $R_b^2$ of $0.65$, indicating we should keep all three variables.
+
+Attempting to add in the local minority variables gave results that could not be interpreted in a meaningful way, apparently indicating that minority students were better off with higher poverty rates in areas where there were fewer people of the same race as them in the community. This is taken to be a confounding effect between the local minority variables and economic variables that may disproportionately affect racial minorities. Because of this confounding effect, the local minority variables were not included in the final model. Therefore, the final model includes race, ESL, poverty, and college as relevant variables.
+
+Summary of model fits, in the order they are discussed:
+
++------------------+------+------+-------------+
+|Model             |-WAIC |-LOOIC|$\bar{R_b^2}$|
++==================+======+======+=============+
+|ANOVA             |$747$ |$747$ |$0.48$       |
++------------------+------+------+-------------+
+|ESL               |$783$ |$783$ |$0.50$       |
++------------------+------+------+-------------+
+|Uninsurance       |$758$ |$758$ |$0.48$       | 
++------------------+------+------+-------------+
+|Poverty           |$889$ |$889$ |$0.62$       |
++------------------+------+------+-------------+
+|Income            |$961$ |$961$ |$0.67$       |
++------------------+------+------+-------------+
+|High School       |$757$ |$757$ |$0.54$       |
++------------------+------+------+-------------+
+|College           |$933$ |$933$ |$0.64$       |
++------------------+------+------+-------------+
+|Local Minority    |$799$ |$799$ |$0.58$       |
++------------------+------+------+-------------+
+|ESL + Poverty     |$949$ |$949$ |$0.70$       |
++------------------+------+------+-------------+
+|ESL + Poverty     |$1001$|$1001$|$0.71$       |
+| + Income         |      |      |             |
++------------------+------+------+-------------+
+|ESL + Income      |$975$ |$975$ |$0.68$       |
++------------------+------+------+-------------+
+|Poverty + Income  |$972$ |$972$ |$0.68$       |
++------------------+------+------+-------------+
+|ESL + Poverty     |$1032$|$1031$|$0.73$       |
+|+ Income + College|      |      |             |
++------------------+------+------+-------------+
+|**ESL + Poverty** |$1013$|$1013$|$0.72$       |
+|**+ College**     |      |      |             |
++------------------+------+------+-------------+
+|ESL + College     |$990$ |$990$ |$0.70$       |
++------------------+------+------+-------------+
+|Poverty + College |$949$ |$949$ |$0.65$       |
++------------------+------+------+-------------+
+
+```{r}
+library("rstan"); library("loo")
+mod = "
+data {
+  int<lower=1>  n;    //num data points
+  vector[n]     Pass; //pass rate; response variable
+  vector[n]     DB;   //indicators for race of student; categorical variables
+  vector[n]     DL;
+  vector[n]     DO;
+  vector[n]     DW;
+  vector[n]     ESL;  //numeric variables
+  vector[n]     Poverty;
+  vector[n]     College;
+  real<lower=0> v;    //sample variance
+}
+parameters {
+  real<lower=0> sigsq; //variance
+  real          betaA; //using asian as reference group (first in alphabetical order)
+  real          betaB; //black
+  real          betaL; //latino
+  real          betaO; //other
+  real          betaW; //white
+  real          alphaA;//now linear stat
+  real          alphaB;
+  real          alphaL;
+  real          alphaO;
+  real          alphaW;
+  real          thetaA;
+  real          thetaB;
+  real          thetaL;
+  real          thetaO;
+  real          thetaW;
+  real          gammaA;
+  real          gammaB;
+  real          gammaL;
+  real          gammaO;
+  real          gammaW;
+}
+transformed parameters{
+  vector[n]     mu;    //mean
+  for(i in 1:n){
+    mu[i] = betaA + alphaA*ESL[i] + thetaA*Poverty[i] + gammaA*College[i] + (betaB + alphaB*ESL[i] + thetaB*Poverty[i] + gammaB*College[i])*DB[i] + (betaL + alphaL*ESL[i] + thetaL*Poverty[i] + gammaL*College[i])*DL[i] + (betaO + alphaO*ESL[i] + thetaO*Poverty[i] + gammaO*College[i])*DO[i] + (betaW + alphaW*ESL[i] + thetaW*Poverty[i] + gammaW*College[i])*DW[i];
+  }
+}
+model{
+  betaA ~ normal(0,100); //priors -- use low-information priors
+  betaB ~ normal(0,100);
+  betaL ~ normal(0,100);
+  betaO ~ normal(0,100);
+  betaW ~ normal(0,100);
+  alphaA ~ normal(0,100); //ESL
+  alphaB ~ normal(0,100);
+  alphaL ~ normal(0,100);
+  alphaO ~ normal(0,100);
+  alphaW ~ normal(0,100);
+  thetaA ~ normal(0,100); //Poverty
+  thetaB ~ normal(0,100);
+  thetaL ~ normal(0,100);
+  thetaO ~ normal(0,100);
+  thetaW ~ normal(0,100);
+  gammaA ~ normal(0,100); //College
+  gammaB ~ normal(0,100);
+  gammaL ~ normal(0,100);
+  gammaO ~ normal(0,100);
+  gammaW ~ normal(0,100);
+  sigsq ~ inv_gamma(0.01,0.01);
+  for(i in 1:n){Pass[i] ~ normal(mu[i],sqrt(sigsq));}
+}
+generated quantities{
+  real Rbsq;
+  real log_lik[n]; //log likelihood
+  
+  Rbsq = 1 - sigsq/v;
+  for(i in 1:n){log_lik[i] = normal_lpdf(Pass[i] | mu[i],sqrt(sigsq));}
+}
+"
+
+loc = "stanmodels/project/ESL_Pov_Col.rda"
+if(!file.exists(loc)){
+  mod = stan_model(model_code = mod)
+  save(mod,file=loc,compress="xz")
+}else{
+  load(loc)
+}
+
+noalldata = behaveddata[which(behaveddata$Race != "All"), ]
+datarefmt = list(v = var(noalldata$Pass), n = length(noalldata$Pass), 
+                 Pass = noalldata$Pass, ESL = noalldata$ESL, 
+                 DB = noalldata$DB, DL = noalldata$DL, DO = noalldata$DO, 
+                 DW = noalldata$DW, College = noalldata$College,
+                 Poverty = noalldata$Poverty)
+options(mc.cores = parallel::detectCores())
+eslpovcol_fit = sampling(mod,datarefmt,iter=20000,chains=4)
+summary(eslpovcol_fit,c("sigsq","Rbsq"))$summary
+```
+
+The equation representing the modeled mean is:
+
+$$
+\mu_i = \beta_A + alpha_A \mathrm{ESL} + theta_A \mathrm{Poverty} + gammaA \mathrm{College} + (\beta_B + alpha_B \mathrm{ESL} + theta_B \mathrm{Poverty} + gammaB \mathrm{College})*D_B + (\beta_L + alpha_L \mathrm{ESL} + theta_L \mathrm{Poverty} + gammaB \mathrm{College})*D_L +
+(\beta_O + alpha_O \mathrm{ESL} + theta_O \mathrm{Poverty} + gammaB \mathrm{College})*D_O +
+(\beta_W + alpha_W \mathrm{ESL} + theta_W \mathrm{Poverty} + gammaW \mathrm{College})*D_W
+$$
+
+with point estimate using the mean of each variable:
+
+$$
+\hat{\mu_i} = 0.66 + 0.22 \mathrm{ESL} - 1.39 \mathrm{Poverty} + 0.05 \mathrm{College} +
+(-0.32 - 0.17 \mathrm{ESL} + 0.89 \mathrm{Poverty} + 0.08 \mathrm{College}) D_B + 
+(-0.29 - 0.16 \mathrm{ESL} + 1.09 \mathrm{Poverty} - 0.07 \mathrm{College}) D_L + 
+(-0.32 - 0.03 \mathrm{ESL} + 0.59 \mathrm{Poverty} + 0.50 \mathrm{College}) D_O + 
+(-0.28 + 0.11 \mathrm{ESL} + 0.82 \mathrm{Poverty} + 0.48 \mathrm{College}) D_W
+$$
+
+Summary of regression coefficients and variance, including quantiles and variance of each:
+
++----------+--------+--------+--------+--------+
+|Variable  |$2.5\%$ |Mean    |$97.5\%$|$\sigma$|
++==========+========+========+========+========+
+|$\beta_A$ |$0.52$  |$0.66$  |$0.81$  |$0.07$  |
++----------+--------+--------+--------+--------+
+|$\beta_B$ |$-0.53$ |$-0.32$ |$-0.12$ |$0.10$  |
++----------+--------+--------+--------+--------+
+|$\beta_L$ |$-0.48$ |$-0.29$ |$-0.11$ |$0.09$  |
++----------+--------+--------+--------+--------+
+|$\beta_O$ |$-0.51$ |$-0.32$ |$-0.12$ |$0.10$  |
++----------+--------+--------+--------+--------+
+|$\beta_W$ |$-0.46$ |$-0.28$ |$-0.09$ |$0.09$  |
++----------+--------+--------+--------+--------+
+|$\alpha_A$|$0.10$  |$-0.22$ |$0.35$  |$0.06$  |
++----------+--------+--------+--------+--------+
+|$\alpha_B$|$-0.32$ |$-0.17$ |$0.01$  |$0.09$  |
++----------+--------+--------+--------+--------+
+|$\alpha_L$|$-0.36$ |$-0.16$ |$-0.00$ |$0.08$  |
++----------+--------+--------+--------+--------+
+|$\alpha_O$|$-0.19$ |$-0.03$ |$0.13$  |$0.08$  |
++----------+--------+--------+--------+--------+
+|$\alpha_W$|$-0.05$ |$0.11$  |$0.27$  |$0.08$  |
++----------+--------+--------+--------+--------+
+|$\theta_A$|$-2.02$ |$-1.39$ |$-0.76$ |$0.32$  |
++----------+--------+--------+--------+--------+
+|$\theta_B$|$-0.02$ |$0.89$  |$1.78$  |$0.47$  |
++----------+--------+--------+--------+--------+
+|$\theta_L$|$0.29$  |$1.09$  |$1.92$  |$0.41$  |
++----------+--------+--------+--------+--------+
+|$\theta_O$|$-0.28$ |$0.59$  |$1.48$  |$0.44$  |
++----------+--------+--------+--------+--------+
+|$\theta_W$|$0.00$  |$0.82$  |$1.09$  |$0.41$  |
++----------+--------+--------+--------+--------+
+|$\gamma_A$|$-0.15$ |$0.05$  |$0.12$  |$0.10$  |
++----------+--------+--------+--------+--------+
+|$\gamma_B$|$-0.20$ |$0.09$  |$0.18$  |$0.14$  |
++----------+--------+--------+--------+--------+
+|$\gamma_L$|$-0.33$ |$-0.07$ |$0.01$  |$0.13$  |
++----------+--------+--------+--------+--------+
+|$\gamma_O$|$0.23$  |$0.50$  |$0.60$  |$0.14$  |
++----------+--------+--------+--------+--------+
+|$\gamma_W$|$0.22$  |$0.48$  |$0.56$  |$0.14$  |
++----------+--------+--------+--------+--------+
+|$\sigma^2$|$0.0056$|$0.0061$|$0.0064$|$0.0004$|
++----------+--------+--------+--------+--------+
+
+It is important to note that, while the point estimate makes it appear that Latino students have slightly lower passing rates in areas with a greater portion of the adult population with four-year degrees, looking at the intervals shows us that the value is very near zero. Similarly, the very small positive effect of college attendance for Asian children is quite close to zero as well.
+
+While the baseline pass rate is similar for most groups, Asian students have almost double the baseline rate. However, they are also significantly more impacted by the poverty rate in their community, which negatively affects all student groups. The ESL variable actually had a generally positive impact on students' English literacy pass rates, but the effect was most pronounced for students in the Asian, White, and "Other" categories. While college education in an area has a positive effect on pass rates for most groups of students, this effect is negligible or nonexistent for Asian and Latino students.
+
+It is difficult to tackle the differing baseline between Asian students and other groups. This data does not make it clear if this is a social factor -- for example, higher expectations from instructors who expect Asian students to be the "smartest" ones in the class -- or if there are other factors at play, such as economic variables differing across races. While we cannot suggest any policy directly addressing this discrepancy, it could be valuable to expand this research by using more granular data; that is, a private study that can assess the effect on pass rate of socioeconomic factors on a more granular level, such as school-by-school instead of county-by-county, could help to determine how to catch up the baseline for other students.
+
+Addressing poverty directly is also a very complex matter, but would help Asian students and those in the "Other" category in particular. Direct financial aid to families is one possible approach, although there are several government programs that already attempt to do this, ranging from food stamps to tax breaks for those with children. Meal programs in schools could also help, although California already has state meal programs for students. There has been a recent push for universal healthcare; this may help families in poverty who struggle to afford doctors' visits with or without insurance. Additionally, the provision of school supplies could help students from impoverished families who otherwise struggle to give their children what they need in order to study.
+
+Because speaking a different language than English at home actually seems to improve the pass rate, it may be beneficial to start teaching second languages in schools at a younger age. The data appears to show that children in areas with more people who speak languages other than English have higher rates of English proficiency, indicating that bilingual individuals may pick up skills in English that monolingual English-speaking students do not. This may help Black students in particular, who seem to receive almost none of this benefit. It is also interesting that the positive effect is diminished for Latino students as well; this could indicate that English as a Second Language classes for Spanish-speaking elementary-schoolers need to be improved.
+
+The final source of discrepancy is college education. Initiatives to directly encourage college attendance could help improve literacy rates -- these include funding for community colleges, which often funnel students into four-year or longer degrees; construction of dorms for campuses that do not already have them; and reduction in cost of attendance, including making financial aid more long-term affordable. However, this does not address Asian and Latino students receive almost no benefit at all from higher rates of college degrees in their community, and Black students receive less benefit than students in the White and "Other" categories. It is possible this could be addressed by diversity and inclusion initiatives and further scholarship opportunities for students in these categories. This is also an area for further study; it would be helpful to know if the effect of college degrees on pass rates for the third-grade English literacy test occurs only within families, or if it has impact on the wider community.
+
+\newpage
+
+# References

@@ -46,7 +46,7 @@ Create a scatter plot of the data using `Wing` as the y variable, `Weight` as th
 CH = Hawks[which(Hawks$Species == "CH"), ]
 RT = Hawks[which(Hawks$Species == "RT"), ]
 SS = Hawks[which(Hawks$Species == "SS"), ]
-plot(Hawks$Weight,Hawks$Wing,xlab="Weight (gm)",ylab="Wingspan (mm)") #Get axes right
+plot(Hawks$Weight,Hawks$Wing,xlab="Weight (g)",ylab="Wingspan (mm)") #Get axes right
 points(CH$Weight,CH$Wing,col='blue')
 points(RT$Weight,RT$Wing,col='red')
 points(SS$Weight,SS$Wing,col='green')
@@ -78,17 +78,18 @@ parameters{
   real          alpha1; //response for red-tailed
   real          alpha2; //response for sharp-shinned
 }
-model{
+transformed parameters{
   vector[n]     mu;     //mean of responses
-
-  //priors:
+  mu = beta0 + alpha1*IR + alpha2*IS;
+}
+model{
+    //priors:
   sigs   ~ inv_gamma(0.01,0.01);
   beta0  ~ normal(0,100);
   //beta1  ~ normal(0,100);
   alpha1 ~ normal(0,100);
   alpha2 ~ normal(0,100);
   
-  mu = beta0 + alpha1*IR + alpha2*IS;
   //data dist
   for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
 }
@@ -96,8 +97,8 @@ generated quantities{
   real Rbsq;
   Rbsq = 1 - sigs/v;
   
-  vector[n] ll; //log likelihood
-  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
 }
 "
 
@@ -157,9 +158,11 @@ parameters{
   //real          alpha1; //response for red-tailed
   //real          alpha2; //response for sharp-shinned
 }
-model{
+transformed parameters{
   vector[n]     mu;     //mean of responses
-
+  mu = beta0 + beta1*Weight;
+}
+model{
   //priors:
   sigs   ~ inv_gamma(0.01,0.01);
   beta0  ~ normal(0,100);
@@ -167,7 +170,6 @@ model{
   //alpha1 ~ normal(0,100);
   //alpha2 ~ normal(0,100);
   
-  mu = beta0 + beta1*Weight;
   //data dist
   for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
 }
@@ -175,8 +177,8 @@ generated quantities{
   real Rbsq;
   Rbsq = 1 - sigs/v;
   
-  vector[n] ll; //log likelihood
-  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
 }
 "
 
@@ -212,9 +214,9 @@ Using the means, a point estimate for the regression equation of the wingspan, i
 
 $$ \mathrm{Wingspan} = 167 + 0.193\mathrm{Weight}$$,
 
-where weight is given in gm.
+where weight is given in g.
 
-Interpretation: Each gram of weight corresponds to, on average, a 0.193 mm increase in wingspan. There is an additional offset of 167 mm. For example, the wingspan of a "weightless" hawk (if hawks could be weightless) would be 167 mm, and the wingspan of a hawk weighing 1000 gm would be 360 mm.
+Interpretation: Each gram of weight corresponds to, on average, a 0.193 mm increase in wingspan. There is an additional offset of 167 mm. For example, the wingspan of a "weightless" hawk (if hawks could be weightless) would be 167 mm, and the wingspan of a hawk weighing 1000 g would be 360 mm.
 
 
 # Problem 6
@@ -239,9 +241,11 @@ parameters{
   real          alpha1; //response for red-tailed
   real          alpha2; //response for sharp-shinned
 }
-model{
+transformed parameters{
   vector[n]     mu;     //mean of responses
-
+  mu = beta0 + beta1*Weight + alpha1*IR + alpha2*IS;
+}
+model{
   //priors:
   sigs   ~ inv_gamma(0.01,0.01);
   beta0  ~ normal(0,100);
@@ -249,16 +253,15 @@ model{
   alpha1 ~ normal(0,100);
   alpha2 ~ normal(0,100);
   
-  mu = beta0 + beta1*Weight + alpha1*IR + alpha2*IS;
   //data dist
   for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
 }
 generated quantities{
   real Rbsq;
   Rbsq = 1 - sigs/v;
-  
-  vector[n] ll; //log likelihood
-  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+  //log likelihood
+  real log_lik[n];
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
 }
 "
 
@@ -322,9 +325,13 @@ parameters{
   real          delta1; //response by weight for red-tailed
   real          delta2; //response by weight for sharp-shinned
 }
-model{
+transformed parameters{
   vector[n]     mu;     //mean of responses
-
+  for(i in 1:n){
+    mu[i] = beta0 + beta1*Weight[i] + (alpha1 + delta1*Weight[i])*IR[i] + (alpha2 + delta2*Weight[i])*IS[i];
+  }
+}
+model{
   //priors:
   sigs   ~ inv_gamma(0.01,0.01);
   beta0  ~ normal(0,100);
@@ -336,7 +343,6 @@ model{
   
   //data dist
   for(i in 1:n){
-    mu[i] = beta0 + beta1*Weight[i] + (alpha1 + delta1*Weight[i])*IR[i] + (alpha2 + delta2*Weight[i])*IS[i];
     Wing[i] ~ normal(mu[i],sqrt(sigs));
   }
 }
@@ -344,8 +350,8 @@ generated quantities{
   real Rbsq;
   Rbsq = 1 - sigs/v;
   
-  vector[n] ll; //log likelihood
-  for(i in 1:n){ll[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
 }
 "
 
@@ -387,21 +393,52 @@ Using the means, a point estimate for the regression equation of the wingspan, i
 
 $$ \mathrm{Wingspan} = 198 + 0.11\mathrm{Weight} + (125 - 0.0541\mathrm{Weight})I_{\mathrm{Red-Tailed}} + (-48.6 + 0.131\mathrm{Weight})I_{\mathrm{Sharp-Shinned}} $$
 
-Interpretation for Cooper's and Red-Tailed: The base wingspan, before accounting for weight, of a Cooper's hawk is 198 mm, and the Red-Tailed hawk's is 125 mm more (323 mm) before accounting for weight. For each gram of weight, the Cooper's hawk's wingspan increases by 0.11 mm, while the Red-Tailed hawk's increases by 0.0541 less (for a net of 0.559 mm/gm), or roughly have as much. Therefore, while the Red-Tailed hawks are generally larger than the Cooper's hawks, the Cooper's hawks' weights more strongly drive their wingspans than the Red-Tailed hawks'.
+Interpretation for Cooper's and Red-Tailed: The base wingspan, before accounting for weight, of a Cooper's hawk is 198 mm, and the Red-Tailed hawk's is 125 mm more (323 mm) before accounting for weight. For each gram of weight, the Cooper's hawk's wingspan increases by 0.11 mm, while the Red-Tailed hawk's increases by 0.0541 less (for a net of 0.559 mm/g), or roughly have as much. Therefore, while the Red-Tailed hawks are generally larger than the Cooper's hawks, the Cooper's hawks' weights more strongly drive their wingspans than the Red-Tailed hawks'.
 
 # Problem 10
 
 Compute the WAIC and LOOIC of each the 4 models, summarizing your results in a simple table.  Which model do you think is most appropriate?  Why? 
 
-```{r}
-print("ANOVA")
-WAIC(fit_anova$ll) #WAIC(ll) for n records, s samples
-looic(mod_anova)#looic(mod) for a bayesian regression model; built on stan
+```{r include=FALSE}
+library(loo)
+#anova
+ll_anova = extract_log_lik(fit_anova,merge_chains=FALSE)
+waic_anova = waic(ll_anova)
+looic_anova = loo(ll_anova,r_eff = exp(relative_eff(ll_anova)))
+#linear
+ll_linear = extract_log_lik(fit_linear,merge_chains=FALSE)
+waic_linear = waic(ll_linear)
+looic_linear = loo(ll_linear,r_eff = exp(relative_eff(ll_linear)))
+#parallel
+ll_parallel = extract_log_lik(fit_parallel,merge_chains=FALSE)
+waic_parallel = waic(ll_parallel)
+looic_parallel = loo(ll_parallel,r_eff = exp(relative_eff(ll_parallel)))
+#separate
+ll_separate = extract_log_lik(fit_separate,merge_chains=FALSE)
+waic_separate = waic(ll_separate)
+looic_separate = loo(ll_separate,r_eff = exp(relative_eff(ll_separate)))
 
-print("Linear"); WAIC(fit_linear$ll); looic(mod_linear)
-print("Parallel"); WAIC(fit_parallel$ll); looic(mod_parallel)
-print("Separate"); WAIC(fit_separate$ll); looic(mod_separate)
+loo_compare(waic_anova,waic_linear,waic_parallel,waic_separate)
+loo_compare(looic_anova,looic_linear,looic_parallel,looic_separate)
 ```
++--------+----+-----+
+|Model   |WAIC|LOOIC|
++========+====+=====+
+|ANOVA   |8613|8613 |
++--------+----+-----+
+|Linear  |8883|8883 |
++--------+----+-----+
+|Parallel|8468|8466 |
++--------+----+-----+
+|Separate|8399|8397 |
++--------+----+-----+
+
+The model with the best WAIC and LOOIC results is the separate lines model. It also appears to be the best fit visually, as the three species all clearly have different wingspan ranges but also do not appear to have the same relationships as each other between weight and wingspan. However, while the separate line model is the best of these options, the WAIC and LOOIC criteria are extremely poor for all of the models. Because other indicators of convergence pass, I believe this is because of one of the following:
+
+1. Log-Likelihood, which is not used by other indicators, is defined incorrectly
+2. Sample variance is too high.
+
+However, I was not able to successfully diagnose the issue before the submission date.
 
 \newpage
 
@@ -409,5 +446,172 @@ print("Separate"); WAIC(fit_separate$ll); looic(mod_separate)
 
 **ANOVA**
 ```
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  //vector[n]    Weight;  //weights
+  vector[n]    IR;      //indicator for Red-Tailed
+  vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  //real          beta1;  //response by weight
+  real          alpha1; //response for red-tailed
+  real          alpha2; //response for sharp-shinned
+}
+transformed parameters{
+  vector[n]     mu;     //mean of responses
+  mu = beta0 + alpha1*IR + alpha2*IS;
+}
+model{
+    //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  //beta1  ~ normal(0,100);
+  alpha1 ~ normal(0,100);
+  alpha2 ~ normal(0,100);
+  
+  //data dist
+  for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
+```
 
+**Normal Linear Regression**
+```
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  //vector[n]    IR;      //indicator for Red-Tailed
+  //vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  //real          alpha1; //response for red-tailed
+  //real          alpha2; //response for sharp-shinned
+}
+transformed parameters{
+  vector[n]     mu;     //mean of responses
+  mu = beta0 + beta1*Weight;
+}
+model{
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  //alpha1 ~ normal(0,100);
+  //alpha2 ~ normal(0,100);
+  
+  //data dist
+  for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
+```
+
+**Parallel Lines**
+```
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  vector[n]    IR;      //indicator for Red-Tailed
+  vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  real          alpha1; //response for red-tailed
+  real          alpha2; //response for sharp-shinned
+}
+transformed parameters{
+  vector[n]     mu;     //mean of responses
+  mu = beta0 + beta1*Weight + alpha1*IR + alpha2*IS;
+}
+model{
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  alpha1 ~ normal(0,100);
+  alpha2 ~ normal(0,100);
+  
+  //data dist
+  for(i in 1:n){Wing[i] ~ normal(mu[i],sqrt(sigs));}
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  //log likelihood
+  real log_lik[n];
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
+```
+
+**Separate Lines**
+```
+data{
+  int<lower=1> n;       //num observations
+  vector[n]    Wing;    //wingspans (RESPONSE VARIABLE)
+  vector[n]    Weight;  //weights
+  vector[n]    IR;      //indicator for Red-Tailed
+  vector[n]    IS;      //indicator for Sharp-Shinned
+  real<lower=0> v;      //sample variance of wingspans
+}
+parameters{
+  real<lower=0> sigs;   //sigma squared
+  real          beta0;  //baseline
+  real          beta1;  //response by weight
+  real          alpha1; //response for red-tailed
+  real          alpha2; //response for sharp-shinned
+  real          delta1; //response by weight for red-tailed
+  real          delta2; //response by weight for sharp-shinned
+}
+transformed parameters{
+  vector[n]     mu;     //mean of responses
+  for(i in 1:n){
+    mu[i] = beta0 + beta1*Weight[i] + (alpha1 + delta1*Weight[i])*IR[i] + (alpha2 + delta2*Weight[i])*IS[i];
+  }
+}
+model{
+  //priors:
+  sigs   ~ inv_gamma(0.01,0.01);
+  beta0  ~ normal(0,100);
+  beta1  ~ normal(0,100);
+  alpha1 ~ normal(0,100);
+  alpha2 ~ normal(0,100);
+  delta1 ~ normal(0,100);
+  delta2 ~ normal(0,100);
+  
+  //data dist
+  for(i in 1:n){
+    Wing[i] ~ normal(mu[i],sqrt(sigs));
+  }
+}
+generated quantities{
+  real Rbsq;
+  Rbsq = 1 - sigs/v;
+  
+  real log_lik[n]; //log likelihood
+  for(i in 1:n){log_lik[i] = normal_lpdf(Wing[i] | mu[i],sqrt(sigs));}
+}
 ```
